@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,27 +13,37 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import { Picker } from "@react-native-picker/picker";
+import { useUser } from "../../context/UserContext";
 
 export default function ChangeSettingsScreen() {
   const router = useRouter();
+  const {
+    username: globalUsername,
+    name: globalName,
+    email: globalEmail,
+    phone: globalPhone,
+    profilePic: globalProfilePic,
+    contacts: globalContacts,
+    shortcuts: globalShortcuts,
+    updateProfile,
+    updateContacts,
+    updateShortcuts,
+  } = useUser();
 
-  // Placeholder changeable profile variables
-  const [username, setUsername] = useState("soggydollar");
-  const [name, setName] = useState("Sarah");
-  const [email, setEmail] = useState("sarah@gmail.com");
-  const [phone, setPhone] = useState("0123456789");
-  const [profilePic, setProfilePic] = useState(null);
+  // Local state for editing - initialize from global context
+  const [username, setUsername] = useState(globalUsername);
+  const [name, setName] = useState(globalName);
+  const [email, setEmail] = useState(globalEmail);
+  const [phone, setPhone] = useState(globalPhone);
+  const [profilePic, setProfilePic] = useState(globalProfilePic);
+  const [contacts, setContacts] = useState([...globalContacts]);
+  const [shortcuts, setShortcuts] = useState({...globalShortcuts});
 
-  // Placeholder changeable contacts
-  const [contacts, setContacts] = useState([
-    { name: "Contact 1", email: "a@gmail.com", phone: "0123456789" },
-  ]);
-
-  //Placeholder changeable shortcuts
-  const [shortcuts, setShortcuts] = useState({
-    shortcut1: "SOS",
-    shortcut2: "Fake Call",
-  });
+  // State for adding new contact
+  const [showAddContact, setShowAddContact] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactEmail, setNewContactEmail] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
 
   // Profile image picker
   const pickImage = async () => {
@@ -49,45 +59,43 @@ export default function ChangeSettingsScreen() {
     }
   };
 
-  // Prompt chain for adding a new contact
-  const handleAddContact = () => {
-    Alert.prompt("New Contact", "Enter name:", [
-      {
-        text: "Cancel",
-        style: "cancel",
-      },
-      {
-        text: "Next",
-        onPress: (name) => {
-          if (!name) return;
-          Alert.prompt("New Contact", "Enter email:", [
-            {
-              text: "Cancel",
-              style: "cancel",
-            },
-            {
-              text: "Next",
-              onPress: (email) => {
-                if (!email) return;
-                Alert.prompt("New Contact", "Enter phone:", [
-                  {
-                    text: "Cancel",
-                    style: "cancel",
-                  },
-                  {
-                    text: "Add",
-                    onPress: (phone) => {
-                      if (!phone) return;
-                      setContacts([...contacts, { name, email, phone }]);
-                    },
-                  },
-                ]);
-              },
-            },
-          ]);
-        },
-      },
-    ]);
+  // Toggle add contact form
+  const handleAddContactToggle = () => {
+    if (showAddContact) {
+      // If form is showing and user clicks button, add the contact
+      if (newContactName && newContactEmail && newContactPhone) {
+        setContacts([...contacts, {
+          name: newContactName,
+          email: newContactEmail,
+          phone: newContactPhone
+        }]);
+        // Reset form
+        setNewContactName('');
+        setNewContactEmail('');
+        setNewContactPhone('');
+        setShowAddContact(false);
+      }
+    } else {
+      // Show the form
+      setShowAddContact(true);
+    }
+  };
+
+  // Save changes to global context
+  const handleSave = () => {
+    // Update all global state
+    updateProfile({
+      username: username,
+      name: name,
+      email: email,
+      phone: phone,
+      profilePic: profilePic,
+    });
+    updateContacts(contacts);
+    updateShortcuts(shortcuts);
+
+    // Navigate back immediately
+    router.back();
   };
 
   return (
@@ -117,7 +125,7 @@ export default function ChangeSettingsScreen() {
               <TextInput
                 style={styles.input}
                 value={username}
-                onChangeText={setUsername}
+                onChangeText={(text) => setUsername(text)}
                 placeholder="Enter username"
                 placeholderTextColor="#ccc"
               />
@@ -127,7 +135,7 @@ export default function ChangeSettingsScreen() {
               <TextInput
                 style={styles.input}
                 value={name}
-                onChangeText={setName}
+                onChangeText={(text) => setName(text)}
                 placeholder="Enter name"
                 placeholderTextColor="#ccc"
               />
@@ -137,9 +145,11 @@ export default function ChangeSettingsScreen() {
               <TextInput
                 style={styles.input}
                 value={email}
-                onChangeText={setEmail}
+                onChangeText={(text) => setEmail(text)}
                 placeholder="Enter email"
                 placeholderTextColor="#ccc"
+                keyboardType="email-address"
+                autoCapitalize="none"
               />
             </View>
             <View style={styles.inputRow}>
@@ -147,9 +157,10 @@ export default function ChangeSettingsScreen() {
               <TextInput
                 style={styles.input}
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(text) => setPhone(text)}
                 placeholder="Enter phone"
                 placeholderTextColor="#ccc"
+                keyboardType="phone-pad"
               />
             </View>
           </View>
@@ -171,8 +182,41 @@ export default function ChangeSettingsScreen() {
             </View>
           ))}
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={handleAddContact}>
-          <Text style={styles.addButtonText}>+ Add Contact</Text>
+
+        {/* Add Contact Form */}
+        {showAddContact && (
+          <View style={styles.addContactForm}>
+            <TextInput
+              style={styles.input}
+              value={newContactName}
+              onChangeText={setNewContactName}
+              placeholder="Contact Name"
+              placeholderTextColor="#ccc"
+            />
+            <TextInput
+              style={styles.input}
+              value={newContactEmail}
+              onChangeText={setNewContactEmail}
+              placeholder="Contact Email"
+              placeholderTextColor="#ccc"
+              keyboardType="email-address"
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              value={newContactPhone}
+              onChangeText={setNewContactPhone}
+              placeholder="Contact Phone"
+              placeholderTextColor="#ccc"
+              keyboardType="phone-pad"
+            />
+          </View>
+        )}
+
+        <TouchableOpacity style={styles.addButton} onPress={handleAddContactToggle}>
+          <Text style={styles.addButtonText}>
+            {showAddContact ? '✓ Add Contact' : '+ Add Contact'}
+          </Text>
         </TouchableOpacity>
 
         {/* Shortcuts */}
@@ -207,7 +251,7 @@ export default function ChangeSettingsScreen() {
         {/* Save Button */}
         <TouchableOpacity
           style={styles.saveButton}
-          onPress={() => router.push("/settings")}
+          onPress={handleSave}
         >
           <Text style={styles.saveButtonText}>Save</Text>
         </TouchableOpacity>
@@ -308,6 +352,10 @@ const styles = StyleSheet.create({
     color: "#e0c8c4",
     fontSize: 16,
     fontWeight: "600",
+  },
+  addContactForm: {
+    marginBottom: 10,
+    gap: 8,
   },
   saveButton: {
     backgroundColor: "#aa63d2",

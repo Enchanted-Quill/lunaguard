@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   View,
   Text,
@@ -9,28 +9,11 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-
-// Placeholder variables (will draw these from a context file in the future)
-const username = "soggydollar";
-const name = "Sarah";
-const email = "sarah@gmail.com";
-const phone = "0123456789";
-
-// Emergency contacts placeholders
-const contacts = [
-  { name: "Contact 1", email: "a@gmail.com", phone: "0123456789" },
-  { name: "Contact 2", email: "b@gmail.com", phone: "0123456789" },
-  { name: "Contact 3", email: "c@gmail.com", phone: "0123456789" },
-  { name: "Contact 4", email: "d@gmail.com", phone: "0123456789" },
-  { name: "Contact 5", email: "e@gmail.com", phone: "0123456789" },
-  { name: "Contact 6", email: "f@gmail.com", phone: "0123456789" },
-  { name: "Contact 7", email: "g@gmail.com", phone: "0123456789" },
-  { name: "Contact 8", email: "h@gmail.com", phone: "0123456789" },
-  { name: "Contact 9", email: "i@gmail.com", phone: "0123456789" },
-];
+import { useUser } from "../../context/UserContext";
 
 export default function SettingsScreen() {
   const router = useRouter();
+  const { username, name, email, phone, profilePic, contacts, shortcuts } = useUser();
 
   return (
     <LinearGradient
@@ -50,7 +33,7 @@ export default function SettingsScreen() {
         <Text style={styles.sectionTitle}>Profile</Text>
         <View style={styles.profileRow}>
           <Image
-            source={require("../../assets/pfp.jpg")}
+            source={profilePic ? { uri: profilePic } : require("../../assets/pfp.jpg")}
             style={styles.profilePic}
           />
           <View style={styles.profileInfo}>
@@ -86,13 +69,13 @@ export default function SettingsScreen() {
           <View style={styles.button}>
             <Text style={styles.buttonText}>Tap side bar twice</Text>
           </View>
-          <Text style={styles.shortcutLabel}>SOS</Text>
+          <Text style={styles.shortcutLabel}>{shortcuts.shortcut1}</Text>
         </View>
         <View style={styles.shortcutRow}>
           <View style={styles.button}>
             <Text style={styles.buttonText}>Press home button 3 times</Text>
           </View>
-          <Text style={styles.shortcutLabel}>Fake Call</Text>
+          <Text style={styles.shortcutLabel}>{shortcuts.shortcut2}</Text>
         </View>
       </ScrollView>
     </LinearGradient>

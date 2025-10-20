@@ -43,7 +43,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.button}
           activeOpacity={0.5}
-          onPress={() => router.push("/settings")} // Navigate to settings
+          onPress={() => router.push("/(settings)/settings")} // Navigate to settings
         >
           <Text style={styles.buttonText}>Settings</Text>
         </TouchableOpacity>

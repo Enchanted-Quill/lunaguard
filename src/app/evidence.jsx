@@ -13,7 +13,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import * as SMS from "expo-sms";
-import { Video, Audio, InterruptionModeIOS, InterruptionModeAndroid } from "expo-av";
+import { VideoView, useVideoPlayer } from "expo-video";
+import { useAudioPlayer } from "expo-audio";
 
 const contacts = [
   { name: "Alice", phone: "1234567890" },
@@ -33,26 +34,29 @@ export default function EvidenceLocker() {
   const [selectedMedia, setSelectedMedia] = useState(null);
   const [importCount, setImportCount] = useState(1);
 
-  useEffect(() => {
-    Audio.setAudioModeAsync({
-      playsInSilentModeIOS: true, // ensures sound even if phone is on silent
-      allowsRecordingIOS: false,
-      staysActiveInBackground: false,
-      interruptionModeIOS: InterruptionModeIOS.DoNotMix,
-      shouldDuckAndroid: false,
-      interruptionModeAndroid: InterruptionModeAndroid.DoNotMix,
-    });
-  }, []);
+  // Create video player for fullscreen video
+  const fullscreenPlayer = useVideoPlayer(
+    selectedMedia?.type === "video" && selectedMedia?.uri
+      ? typeof selectedMedia.uri === "string"
+        ? selectedMedia.uri
+        : selectedMedia.uri
+      : null,
+    (player) => {
+      if (selectedMedia?.type === "video") {
+        player.play();
+      }
+    }
+  );
 
   const handleImport = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images", "videos"],
+        mediaTypes: ["images", "videos"], // Updated: replaced MediaTypeOptions with array
         allowsMultipleSelection: false,
         quality: 1,
       });
 
-      if (!result.canceled && result.assets && result.assets.length > 0) {
+      if (!result.canceled && result.assets && result.assets.length > 0) { // Updated: 'canceled' instead of 'cancelled'
         const asset = result.assets[0];
         setMediaItems((prev) => [
           ...prev,
@@ -99,6 +103,22 @@ export default function EvidenceLocker() {
   const openFullScreen = (item) => setSelectedMedia(item);
   const closeFullScreen = () => setSelectedMedia(null);
 
+  // Create thumbnail players for grid (these don't autoplay)
+  const ThumbnailVideo = ({ source }) => {
+    const player = useVideoPlayer(source, (player) => {
+      // Don't autoplay thumbnails
+      player.pause();
+    });
+
+    return (
+      <VideoView
+        player={player}
+        style={styles.mediaInner}
+        nativeControls={false}
+      />
+    );
+  };
+
   return (
     <LinearGradient colors={["#521684", "#1c052f"]} style={styles.container}>
       {/* Sticky Header */}
@@ -126,13 +146,8 @@ export default function EvidenceLocker() {
                 onPress={() => openFullScreen(item)}
               >
                 {item.type === "video" ? (
-                  <Video
-                    source={typeof item.uri === "string" ? { uri: item.uri } : item.uri}
-                    useNativeControls={false}
-                    shouldPlay={false}
-                    isLooping={false}
-                    resizeMode="cover"
-                    style={styles.mediaInner}
+                  <ThumbnailVideo
+                    source={typeof item.uri === "string" ? item.uri : item.uri}
                   />
                 ) : (
                   <Image
@@ -156,15 +171,11 @@ export default function EvidenceLocker() {
 
           <View style={styles.fullscreenInner}>
             {selectedMedia.type === "video" ? (
-              <Video
-                source={typeof selectedMedia.uri === "string" ? { uri: selectedMedia.uri } : selectedMedia.uri}
-                shouldPlay={true}
-                useNativeControls={true}
-                isLooping={false}
-                resizeMode="contain"
-                isMuted={false}
-                volume={1.0}
+              <VideoView
+                player={fullscreenPlayer}
                 style={styles.fullscreenMedia}
+                nativeControls={true}
+                contentFit="contain"
               />
             ) : (
               <Image
