@@ -9,29 +9,45 @@ import {
   Keyboard,
   Image,
   TouchableOpacity,
-  View
+  View,
+  Alert
 } from 'react-native';
 
-import { auth } from '../../../firebaseConfig'
-import { createUserWithEmailAndPassword} from 'firebase/auth'
-import { useState } from 'react'
-import { router } from 'expo-router'
-import { LinearGradient } from 'expo-linear-gradient'
-import { FontAwesome, MaterialIcons } from '@expo/vector-icons'
 
-const signUp = () => {
+import auth from '@react-native-firebase/auth';
+import { useState } from 'react';
+import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
+import { signInWithGoogle } from '../../utils/firebaseAuth';
+
+const SignUp = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const register = async () => {
-      try {
-        const user = await createUserWithEmailAndPassword(auth, email.trim(), password.trim());
-        if (user) router.replace('/(tabs)/settings');
-      } catch (error) {
-        console.error("Registration error:", error.code, error.message);
-        alert('Sign up failed: ' + error.message);
-      }
+    try {
+      const userCredential = await auth().createUserWithEmailAndPassword(
+        email.trim(),
+        password.trim()
+      );
+      if (userCredential) router.replace('/home');
+    } catch (error) {
+      console.error("Registration error:", error.code, error.message);
+      Alert.alert('Sign up failed: ' + error.message);
     }
+  };
+
+  const handleGoogleRegister = async () => {
+      try {
+        await signInWithGoogle();
+        Alert.alert('Success', 'Google sign-up successful!');
+        router.replace('/home');
+      } catch (error) {
+        Alert.alert('Error', 'Google sign-up failed. Please try again.');
+      }
+    };
+
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <KeyboardAvoidingView
@@ -43,52 +59,85 @@ const signUp = () => {
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
+          <LinearGradient
+            colors={["#521684", "#1c052f"]}
+            style={StyleSheet.absoluteFill}
+          />
+          <Image
+            source={require('../../assets/register.png')}
+            style={styles.img}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>
+            <Text style={styles.luna}>Sign </Text>
+            <Text style={styles.guard}>Up</Text>
+          </Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={styles.textInput}
+            placeholder="password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <TouchableOpacity onPress={register} style={styles.button}>
+            <Text style={styles.text}>Register</Text>
+          </TouchableOpacity>
 
-            <LinearGradient
-                    colors={["#521684", "#1c052f"]}
-                    style={StyleSheet.absoluteFill}
-            />
-            <Image source={require('../../assets/register.png')} style={styles.img} resizeMode="contain"/>
-            <Text style={styles.title}>
-                <Text style={styles.luna}>Sign </Text>
-                <Text style={styles.guard}>Up</Text>
-            </Text>
-            <TextInput style={styles.textInput} placeholder="email" value={email} onChangeText={setEmail} />
-            <TextInput style={styles.textInput} placeholder="password" value={password} onChangeText={setPassword} secureTextEntry/>
-            <TouchableOpacity onPress={register} style={styles.button}>
-              <Text style={styles.text}>Register</Text>
+          <Text style={styles.orText}>OR</Text>
+
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Phone"
+              onPress= {()=> {router.push('/(auth)/phone')}}
+            >
+              <MaterialIcons
+                name="phone"
+                size={18}
+                color="#FFFFFF"
+                style={styles.icon}
+              />
+              <Text style={styles.secondaryText}>Continue With Phone</Text>
             </TouchableOpacity>
 
-            <Text style={styles.orText}>OR</Text>
-            
-            <View style={styles.card}>
-            
-              <TouchableOpacity style={styles.secondaryButton} accessibilityRole="button" accessibilityLabel="Continue with phone">
-                <MaterialIcons name="phone" size={18} color="#FFFFFF" style={styles.icon} />
-                <Text style={styles.secondaryText}>Continue With Phone</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.secondaryButton} accessibilityRole="button" accessibilityLabel="Continue with Google">
-                <FontAwesome name="google" size={18} color="#FFFFFF" style={styles.icon} />
-                <Text style={styles.secondaryText}>Continue With Google</Text>
-              </TouchableOpacity>
-            </View>
-
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              onPress={handleGoogleRegister}
+              accessibilityLabel="Continue with Google"
+            >
+              <FontAwesome
+                name="google"
+                size={18}
+                color="#FFFFFF"
+                style={styles.icon}
+              />
+              <Text style={styles.secondaryText}>Continue With Google</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
+  );
+};
 
-  )
-}
-
-export default signUp;
+export default SignUp;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#301934', 
+    backgroundColor: '#301934',
   },
   img: {
     width: 200,
@@ -114,20 +163,20 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     marginVertical: 8,
     paddingHorizontal: 25,
-    fontSize: 16, 
-    color: '#ffffffff', 
+    fontSize: 16,
+    color: '#ffffffff',
     shadowColor: '#9E9E9E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 4, //subtle 3d effect
+    elevation: 4,
   },
   button: {
     width: '60%',
     marginVertical: 15,
-    backgroundColor: '#570d81ff', 
+    backgroundColor: '#570d81ff',
     padding: 20,
-    borderRadius: 15, 
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#815cc0ff',
@@ -137,11 +186,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   text: {
-    color: '#FFFFFF', 
-    fontSize: 18, 
-    fontWeight: '600', 
-  }
-  ,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
   card: {
     width: '92%',
     backgroundColor: 'rgba(255, 255, 255, 0)',
@@ -154,7 +202,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 6,
     elevation: 3,
-    marginBottom:20
+    marginBottom: 20,
   },
   orText: {
     color: '#FFFFFF',

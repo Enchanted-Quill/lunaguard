@@ -10,29 +10,44 @@ import {
   Image,
   TouchableOpacity,
   View,
+  Alert
 } from 'react-native';
 
-import { auth } from '../../../firebaseConfig'
-import { signInWithEmailAndPassword} from 'firebase/auth'
-import { useState } from 'react'
-import { router } from 'expo-router'
-import { LinearGradient } from 'expo-linear-gradient'
-import { FontAwesome, MaterialIcons } from '@expo/vector-icons'
+import auth from '@react-native-firebase/auth';
+import { useState } from 'react';
+import { router } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import { FontAwesome, MaterialIcons } from '@expo/vector-icons';
+import { signInWithGoogle } from '../../utils/firebaseAuth';
 
-const logIn = () => {
+const LogIn = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
 
   const login = async () => {
-      try {
-        const userCredential = await signInWithEmailAndPassword(auth, email.trim(), password.trim());
-        if (userCredential) router.replace('/(tabs)/settings');
-      } catch (error) {
-        console.error("Login error:", error.code, error.message);
-        alert('Sign in failed: ' + error.message);
+    try {
+      const userCredential = await auth().signInWithEmailAndPassword(
+        email.trim(),
+        password.trim()
+      );
+      if (userCredential) {
+        router.replace('/home');
       }
+    } catch (error) {
+      console.error('Login error:', error.code, error.message);
+      Alert.alert('Sign in failed: ' + error.message);
     }
+  };
 
+  const handleGoogleLogin = async () => {
+      try {
+        await signInWithGoogle();
+        Alert.alert('Success', 'Google login successful!');
+        router.replace('/home');
+      } catch (error) {
+        Alert.alert('Error', 'Google login failed. Please try again.');
+      }
+    };
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
@@ -45,52 +60,85 @@ const logIn = () => {
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
         >
+          <LinearGradient
+            colors={['#521684', '#1c052f']}
+            style={StyleSheet.absoluteFill}
+          />
+          <Image
+            source={require('../../assets/login.png')}
+            style={styles.img}
+            resizeMode="contain"
+          />
+          <Text style={styles.title}>
+            <Text style={styles.luna}>Log </Text>
+            <Text style={styles.guard}>In</Text>
+          </Text>
+          <TextInput
+            style={styles.textInput}
+            placeholder="email"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
+          <TextInput
+            style={styles.textInput}
+            placeholder="password"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
+          <TouchableOpacity onPress={login} style={styles.button}>
+            <Text style={styles.text}>Log In</Text>
+          </TouchableOpacity>
 
-            <LinearGradient
-                    colors={["#521684", "#1c052f"]}
-                    style={StyleSheet.absoluteFill}
-            />
-            <Image source={require('../../assets/login.png')} style={styles.img} resizeMode="contain"/>
-            <Text style={styles.title}>
-                <Text style={styles.luna}>Log </Text>
-                <Text style={styles.guard}>In</Text>
-            </Text>
-            <TextInput style={styles.textInput} placeholder="email" value={email} onChangeText={setEmail} />
-            <TextInput style={styles.textInput} placeholder="password" value={password} onChangeText={setPassword} secureTextEntry/>
-            <TouchableOpacity onPress={login} style={styles.button}>
-              <Text style={styles.text}>Log In</Text>
+          <Text style={styles.orText}>OR</Text>
+
+          <View style={styles.card}>
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Phone"
+              onPress= {()=> {router.push('/(auth)/phone')}}
+            >
+              <MaterialIcons
+                name="phone"
+                size={18}
+                color="#FFFFFF"
+                style={styles.icon}
+              />
+              <Text style={styles.secondaryText}>Continue With Phone</Text>
             </TouchableOpacity>
 
-            <Text style={styles.orText}>OR</Text>
-            
-            <View style={styles.card}>
-            
-              <TouchableOpacity style={styles.secondaryButton} accessibilityRole="button" accessibilityLabel="Continue with phone">
-                <MaterialIcons name="phone" size={18} color="#FFFFFF" style={styles.icon} />
-                <Text style={styles.secondaryText}>Continue With Phone</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity style={styles.secondaryButton} accessibilityRole="button" accessibilityLabel="Continue with Google">
-                <FontAwesome name="google" size={18} color="#FFFFFF" style={styles.icon} />
-                <Text style={styles.secondaryText}>Continue With Google</Text>
-              </TouchableOpacity>
-            </View>
-
+            <TouchableOpacity
+              style={styles.secondaryButton}
+              accessibilityRole="button"
+              accessibilityLabel="Continue with Google"
+              onPress = {handleGoogleLogin}
+            >
+              <FontAwesome
+                name="google"
+                size={18}
+                color="#FFFFFF"
+                style={styles.icon}
+              />
+              <Text style={styles.secondaryText}>Continue With Google</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </TouchableWithoutFeedback>
+  );
+};
 
-  )
-}
-
-export default logIn
+export default LogIn;
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#301934', 
+    backgroundColor: '#301934',
   },
   img: {
     width: 200,
@@ -99,14 +147,14 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 62,
-    fontWeight: "bold",
+    fontWeight: 'bold',
     marginBottom: 12,
   },
   luna: {
-    color: "#e1c8f5",
+    color: '#e1c8f5',
   },
   guard: {
-    color: "#ac78cf",
+    color: '#ac78cf',
   },
   textInput: {
     height: 50,
@@ -116,20 +164,20 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     marginVertical: 8,
     paddingHorizontal: 25,
-    fontSize: 16, 
-    color: '#ffffffff', 
+    fontSize: 16,
+    color: '#ffffffff',
     shadowColor: '#9E9E9E',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
-    elevation: 4, //subtle 3d effect
+    elevation: 4,
   },
   button: {
     width: '60%',
     marginVertical: 15,
-    backgroundColor: '#570d81ff', 
+    backgroundColor: '#570d81ff',
     padding: 20,
-    borderRadius: 15, 
+    borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#815cc0ff',
@@ -139,11 +187,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   text: {
-    color: '#FFFFFF', 
-    fontSize: 18, 
-    fontWeight: '600', 
-  }
-  ,
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '600',
+  },
   card: {
     width: '92%',
     backgroundColor: 'rgba(255, 255, 255, 0)',
@@ -156,7 +203,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.18,
     shadowRadius: 6,
     elevation: 3,
-    marginBottom:20
+    marginBottom: 20,
   },
   orText: {
     color: '#FFFFFF',
@@ -185,5 +232,5 @@ const styles = StyleSheet.create({
   icon: {
     marginRight: 10,
     opacity: 0.95,
-  }
+  },
 });

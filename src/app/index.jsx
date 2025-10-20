@@ -9,6 +9,11 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+
+GoogleSignin.configure({
+  webClientId: '877797615505-7ulh4595slq2roakc1gmd22aceabaufd.apps.googleusercontent.com', // Replace with your Web Client ID
+});
 
 //Finds saved logo in assets
 const logo = require("../assets/logo.png");
