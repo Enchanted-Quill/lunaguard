@@ -1,21 +1,34 @@
 // utils/firebaseAuth.js
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import { getAuth, GoogleAuthProvider, signInWithCredential } from '@react-native-firebase/auth';
-import { Alert } from 'react-native';
+import auth from '@react-native-firebase/auth';
 
-// Sign in with Google
+// Configure Google Sign-In
+GoogleSignin.configure({
+  webClientId: '877797615505-7ulh4595slq2roakc1gmd22aceabaufd.apps.googleusercontent.com',
+  offlineAccess: true,
+  forceCodeForRefreshToken: true,
+});
+
 export const signInWithGoogle = async () => {
-  try {
-    const { idToken } = await GoogleSignin.signIn();
+    try {
+      await GoogleSignin.signOut();
+      const result = await GoogleSignin.signIn();
+      const { idToken } = result.data;
 
-    const googleCredential = GoogleAuthProvider.credential(idToken);
+      if (!idToken) {
+        throw new Error(
+          'Google Sign-In failed: no idToken returned. Check webClientId, SHA-1, and device Google Play Services.'
+        );
+      }
 
-    const auth = getAuth();
-    const userCredential = await signInWithCredential(auth, googleCredential);
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      const userCredential = await auth().signInWithCredential(googleCredential);
 
-    return userCredential.user;
-  } catch (error) {
-    console.error('Google Sign-In Error:', error);
-    throw error;
-  }
+      return userCredential.user;
+    } catch (error) {
+      console.error('Google Sign-In Error:', error);
+      throw error;
+    }
 };
+
+

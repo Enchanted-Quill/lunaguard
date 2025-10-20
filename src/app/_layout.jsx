@@ -9,6 +9,7 @@ const _layout = () => {
         <Stack.Screen name="index" />
         <Stack.Screen name="(auth)/login" options={{headerShown: true, title: 'Log In'}} />
         <Stack.Screen name="(auth)/register" options={{headerShown: true, title: 'Register'}} />
+        <Stack.Screen name="(auth)/phone" options={{headerShown: true, title: 'Phone'}} />
       </Stack>
 
     </SafeAreaProvider>
