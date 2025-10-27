@@ -1,5 +1,5 @@
 // context/UserContext.js
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const UserContext = createContext();
 
@@ -22,6 +22,9 @@ export const UserProvider = ({ children }) => {
     shortcut2: "Fake Call",
   });
 
+  // Danger radius state for map
+  const [dangerRadius, setDangerRadius] = useState(1);
+
   // Incidents state for map
   const [incidents, setIncidents] = useState([
     // Example incident for testing
@@ -34,6 +37,22 @@ export const UserProvider = ({ children }) => {
       reportedBy: 'soggydollar',
     }
   ]);
+
+  // Clean up old incidents
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      setIncidents(prevIncidents =>
+        prevIncidents.filter(incident =>
+          new Date(incident.time) >= thirtyDaysAgo
+        )
+      );
+    }, 24 * 60 * 60 * 1000); // Check once per day
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
 
   // Function to update profile
   const updateProfile = (profileData) => {
@@ -75,6 +94,67 @@ export const UserProvider = ({ children }) => {
     setIncidents(newIncidents);
   };
 
+  // Function to upvote/downvote incidents in map
+  const voteOnIncident = (incidentId, voteType, voterUsername) => {
+    setIncidents(prevIncidents => {
+      const updatedIncidents = prevIncidents.map(incident => {
+        if (incident.id !== incidentId) return incident;
+
+        const upvotes = incident.upvotes || [];
+        const downvotes = incident.downvotes || [];
+
+        // Remove from both arrays first
+        const newUpvotes = upvotes.filter(u => u !== voterUsername);
+        const newDownvotes = downvotes.filter(u => u !== voterUsername);
+
+        // Add to appropriate array
+        if (voteType === 'upvote') {
+          newUpvotes.push(voterUsername);
+        } else if (voteType === 'downvote') {
+          newDownvotes.push(voterUsername);
+        }
+
+        return {
+          ...incident,
+          upvotes: newUpvotes,
+          downvotes: newDownvotes,
+        };
+      });
+
+      // Filter out incidents with >20 downvotes and >90% downvote ratio
+      return updatedIncidents.filter(incident => {
+        const upvoteCount = incident.upvotes?.length || 0;
+        const downvoteCount = incident.downvotes?.length || 0;
+        const totalVotes = upvoteCount + downvoteCount;
+
+        // Keep incident if it doesn't meet removal criteria
+        if (downvoteCount <= 20) return true;
+        if (totalVotes === 0) return true;
+
+        const downvoteRatio = downvoteCount / totalVotes;
+        return downvoteRatio <= 0.9; // Remove if ratio > 90%
+      });
+    });
+  };
+
+  // Function to delete one's own incidents
+  const deleteIncident = (incidentId) => {
+    setIncidents(prevIncidents =>
+      prevIncidents.filter(incident => incident.id !== incidentId)
+    );
+  };
+
+  // Function to edit one's own incidents
+  const updateIncident = (incidentId, updates) => {
+    setIncidents(prevIncidents =>
+      prevIncidents.map(incident =>
+        incident.id === incidentId
+          ? { ...incident, ...updates, editedAt: new Date().toISOString() }
+          : incident
+      )
+    );
+  };
+
   const value = {
     // Profile data
     username,
@@ -86,8 +166,14 @@ export const UserProvider = ({ children }) => {
     contacts,
     // Shortcuts
     shortcuts,
+    // Danger radius
+    dangerRadius,
+    setDangerRadius,
     // Incidents
     incidents,
+    voteOnIncident,
+    deleteIncident,
+    updateIncident,
     // Update functions
     updateProfile,
     addContact,

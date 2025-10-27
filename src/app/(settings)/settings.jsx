@@ -13,7 +13,7 @@ import { useUser } from "../../context/UserContext";
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { username, name, email, phone, profilePic, contacts, shortcuts } = useUser();
+  const { username, name, email, phone, profilePic, contacts, shortcuts, dangerRadius } = useUser();
 
   return (
     <LinearGradient
@@ -77,6 +77,15 @@ export default function SettingsScreen() {
           </View>
           <Text style={styles.shortcutLabel}>{shortcuts.shortcut2}</Text>
         </View>
+
+        {/* Danger Radius */}
+        <Text style={styles.sectionTitle}>Danger Radius</Text>
+        <Text style={styles.profileText}>
+          Current radius: {dangerRadius} mile{dangerRadius !== 1 ? 's' : ''}
+        </Text>
+        <Text style={[styles.profileText, { fontSize: 14, marginTop: 5 }]}>
+          Routes will avoid incidents within this distance.
+        </Text>
       </ScrollView>
     </LinearGradient>
   );

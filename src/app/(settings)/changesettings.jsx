@@ -25,9 +25,11 @@ export default function ChangeSettingsScreen() {
     profilePic: globalProfilePic,
     contacts: globalContacts,
     shortcuts: globalShortcuts,
+    dangerRadius: globalDangerRadius,
     updateProfile,
     updateContacts,
     updateShortcuts,
+    setDangerRadius,
   } = useUser();
 
   // Local state for editing - initialize from global context
@@ -44,6 +46,9 @@ export default function ChangeSettingsScreen() {
   const [newContactName, setNewContactName] = useState('');
   const [newContactEmail, setNewContactEmail] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
+
+  // Danger radius state
+  const [localDangerRadius, setLocalDangerRadius] = useState(globalDangerRadius);
 
   // Profile image picker
   const pickImage = async () => {
@@ -93,6 +98,7 @@ export default function ChangeSettingsScreen() {
     });
     updateContacts(contacts);
     updateShortcuts(shortcuts);
+    setDangerRadius(localDangerRadius);
 
     // Navigate back immediately
     router.back();
@@ -246,6 +252,23 @@ export default function ChangeSettingsScreen() {
             <Picker.Item label="Fake Call" value="Fake Call" />
             <Picker.Item label="Record Audio" value="Record Audio" />
           </Picker>
+        </View>
+
+        {/* Danger Radius */}
+        <Text style={styles.sectionTitle}>Danger Radius</Text>
+        <Text style={styles.shortcutLabel}>
+          Routes avoid incidents within: {localDangerRadius} mile{localDangerRadius !== 1 ? 's' : ''}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 10 }}>
+          <TouchableOpacity onPress={() => setLocalDangerRadius(Math.max(0.5, localDangerRadius - 0.5))}>
+            <Text style={{ color: '#fff', fontSize: 24, paddingHorizontal: 15 }}>−</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1, height: 4, backgroundColor: '#652a9c', borderRadius: 2 }}>
+            <View style={{ width: `${(localDangerRadius / 5) * 100}%`, height: '100%', backgroundColor: '#aa63d2', borderRadius: 2 }} />
+          </View>
+          <TouchableOpacity onPress={() => setLocalDangerRadius(Math.min(5, localDangerRadius + 0.5))}>
+            <Text style={{ color: '#fff', fontSize: 24, paddingHorizontal: 15 }}>+</Text>
+          </TouchableOpacity>
         </View>
 
         {/* Save Button */}
