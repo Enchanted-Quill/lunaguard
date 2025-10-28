@@ -2,6 +2,12 @@
 import auth from '@react-native-firebase/auth';
 import firestore from '@react-native-firebase/firestore';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import auth from '@react-native-firebase/auth';
+import { initializeApp } from '@react-native-firebase/app';
+
+if (!auth().app) {
+  initializeApp();
+}
 
 // Configure Google Sign-In
 GoogleSignin.configure({

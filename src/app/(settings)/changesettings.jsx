@@ -26,6 +26,7 @@ export default function ChangeSettingsScreen() {
     updateProfile,
     updateEmergencyContacts,
     updateShortcuts,
+    setDangerRadius,
   } = useUser();
 
   const [username, setUsername] = useState(userProfile.username || "");
@@ -200,19 +201,51 @@ export default function ChangeSettingsScreen() {
 
         {/* Shortcuts */}
         <Text style={styles.sectionTitle}>Shortcuts</Text>
-        {Object.entries(localShortcuts).map(([key, value]) => (
-          <View style={styles.shortcutRow} key={key}>
-            <Text style={styles.shortcutLabel}>{key}</Text>
-            <TextInput
-              style={styles.input}
-              value={value}
-              onChangeText={(val) =>
-                setLocalShortcuts((prev) => ({ ...prev, [key]: val }))
-              }
-            />
-          </View>
-        ))}
+        <View style={styles.shortcutRow}>
+          <Text style={styles.shortcutLabel}>Tap side bar twice</Text>
+          <Picker
+            selectedValue={shortcuts.shortcut1}
+            style={styles.picker}
+            dropdownIconColor="#fff"
+            onValueChange={(val) => setShortcuts({ ...shortcuts, shortcut1: val })}
+          >
+            <Picker.Item label="SOS" value="SOS" />
+            <Picker.Item label="Fake Call" value="Fake Call" />
+            <Picker.Item label="Record Audio" value="Record Audio" />
+          </Picker>
+        </View>
+        <View style={styles.shortcutRow}>
+          <Text style={styles.shortcutLabel}>Press home button 3 times</Text>
+          <Picker
+            selectedValue={shortcuts.shortcut2}
+            style={styles.picker}
+            dropdownIconColor="#fff"
+            onValueChange={(val) => setShortcuts({ ...shortcuts, shortcut2: val })}
+          >
+            <Picker.Item label="SOS" value="SOS" />
+            <Picker.Item label="Fake Call" value="Fake Call" />
+            <Picker.Item label="Record Audio" value="Record Audio" />
+          </Picker>
+        </View>
 
+        {/* Danger Radius */}
+        <Text style={styles.sectionTitle}>Danger Radius</Text>
+        <Text style={styles.shortcutLabel}>
+          Routes avoid incidents within: {localDangerRadius} mile{localDangerRadius !== 1 ? 's' : ''}
+        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', marginVertical: 10 }}>
+          <TouchableOpacity onPress={() => setLocalDangerRadius(Math.max(0.5, localDangerRadius - 0.5))}>
+            <Text style={{ color: '#fff', fontSize: 24, paddingHorizontal: 15 }}>−</Text>
+          </TouchableOpacity>
+          <View style={{ flex: 1, height: 4, backgroundColor: '#652a9c', borderRadius: 2 }}>
+            <View style={{ width: `${(localDangerRadius / 5) * 100}%`, height: '100%', backgroundColor: '#aa63d2', borderRadius: 2 }} />
+          </View>
+          <TouchableOpacity onPress={() => setLocalDangerRadius(Math.min(5, localDangerRadius + 0.5))}>
+            <Text style={{ color: '#fff', fontSize: 24, paddingHorizontal: 15 }}>+</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Save Button */}
         <TouchableOpacity
           style={[styles.saveButton, saving && { opacity: 0.6 }]}
           disabled={saving}

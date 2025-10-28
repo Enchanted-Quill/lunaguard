@@ -78,41 +78,27 @@ export default function SettingsScreen() {
 
         {/* Shortcuts */}
         <Text style={styles.sectionTitle}>Shortcuts</Text>
-        {Object.entries(shortcuts).length ? (
-          Object.entries(shortcuts).map(([key, value]) => (
-            <View style={styles.shortcutRow} key={key}>
-              <View style={styles.button}>
-                <Text style={styles.buttonText}>
-                  {key.replace(/([A-Z])/g, " $1")}
-                </Text>
-              </View>
-              <Text style={styles.shortcutLabel}>{value}</Text>
-            </View>
-          ))
-        ) : (
-          <Text style={{ color: "#fff", marginVertical: 5 }}>
-            No shortcuts set
-          </Text>
-        )}
-        <TouchableOpacity
-          style={styles.signOutButton}
-          onPress={async () => {
-            try {
-              // Sign out from Firebase
-              await auth().signOut();
+        <View style={styles.shortcutRow}>
+          <View style={styles.button}>
+            <Text style={styles.buttonText}>Tap side bar twice</Text>
+          </View>
+          <Text style={styles.shortcutLabel}>{shortcuts.shortcut1}</Text>
+        </View>
+        <View style={styles.shortcutRow}>
+          <View style={styles.button}>
+            <Text style={styles.buttonText}>Press home button 3 times</Text>
+          </View>
+          <Text style={styles.shortcutLabel}>{shortcuts.shortcut2}</Text>
+        </View>
 
-              // Sign out from Google
-              await GoogleSignin.signOut();
-
-              // Optionally navigate back to login screen
-              router.push("/");
-            } catch (error) {
-              console.error("Sign out error:", error);
-            }
-          }}
-        >
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
+        {/* Danger Radius */}
+        <Text style={styles.sectionTitle}>Danger Radius</Text>
+        <Text style={styles.profileText}>
+          Current radius: {dangerRadius} mile{dangerRadius !== 1 ? 's' : ''}
+        </Text>
+        <Text style={[styles.profileText, { fontSize: 14, marginTop: 5 }]}>
+          Routes will avoid incidents within this distance.
+        </Text>
       </ScrollView>
     </LinearGradient>
   );

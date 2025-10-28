@@ -6,7 +6,11 @@ import storage from '@react-native-firebase/storage';
 
 const UserContext = createContext();
 
-export const useUser = () => useContext(UserContext);
+export const useUser = () => {
+  const context = useContext(UserContext);
+  if (!context) throw new Error('useUser must be used within a UserProvider');
+  return context;
+};
 
 export const UserProvider = ({ children }) => {
   // --- User Profile ---
@@ -39,6 +43,34 @@ export const UserProvider = ({ children }) => {
     { name: '', phone: '' },
   ]);
 
+  // --- Incidents ---
+  const [incidents, setIncidents] = useState([
+    {
+      id: '1',
+      title: 'Suspicious Activity',
+      location: { latitude: 34.0522, longitude: -118.2437 },
+      time: new Date().toISOString(),
+      description: 'Person following individuals in parking lot',
+      reportedBy: 'soggydollar',
+    },
+  ]);
+
+  const [dangerRadius, setDangerRadius] = useState(1);
+
+  // Clean up old incidents
+  useEffect(() => {
+    const cleanupInterval = setInterval(() => {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      setIncidents(prev =>
+        prev.filter(incident => new Date(incident.time) >= thirtyDaysAgo)
+      );
+    }, 24 * 60 * 60 * 1000);
+
+    return () => clearInterval(cleanupInterval);
+  }, []);
+
   // --- Load user data on app start ---
   useEffect(() => {
     const loadUserData = async () => {
@@ -57,12 +89,7 @@ export const UserProvider = ({ children }) => {
       } else {
         // Create default Firestore doc if it doesn't exist
         await userRef.set({
-          userProfile: {
-            name: user.displayName || '',
-            username: user.displayName || '',
-            phone: user.phoneNumber || '',
-            profilePic: null,
-          },
+          userProfile,
           permissions,
           shortcuts,
           emergencyContacts,
@@ -74,17 +101,17 @@ export const UserProvider = ({ children }) => {
   }, []);
 
   // --- Profile Functions ---
-  const updateProfile = async (updates) => {
-    setUserProfile((prev) => ({ ...prev, ...updates }));
+  const updateProfile = async updates => {
+    setUserProfile(prev => ({ ...prev, ...updates }));
     const user = auth().currentUser;
     if (!user) return;
-    await firestore().collection('users').doc(user.uid).set(
-      { userProfile: { ...userProfile, ...updates } },
-      { merge: true }
-    );
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ userProfile: { ...userProfile, ...updates } }, { merge: true });
   };
 
-  const uploadProfilePic = async (localUri) => {
+  const uploadProfilePic = async localUri => {
     if (!localUri) return null;
     const user = auth().currentUser;
     if (!user) return null;
@@ -92,14 +119,8 @@ export const UserProvider = ({ children }) => {
     try {
       const fileName = localUri.split('/').pop();
       const storageRef = storage().ref(`profilePics/${user.uid}/${fileName}`);
-
-      // Upload local file directly
       await storageRef.putFile(localUri);
-
-      // Get download URL
       const downloadURL = await storageRef.getDownloadURL();
-
-      // Update Firestore and local context
       await updateProfile({ profilePic: downloadURL });
       return downloadURL;
     } catch (err) {
@@ -109,29 +130,29 @@ export const UserProvider = ({ children }) => {
   };
 
   // --- Permissions Functions ---
-  const updatePermissions = async (updates) => {
-    setPermissions((prev) => ({ ...prev, ...updates }));
+  const updatePermissions = async updates => {
+    setPermissions(prev => ({ ...prev, ...updates }));
     const user = auth().currentUser;
     if (!user) return;
-    await firestore().collection('users').doc(user.uid).set(
-      { permissions: { ...permissions, ...updates } },
-      { merge: true }
-    );
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ permissions: { ...permissions, ...updates } }, { merge: true });
   };
 
   // --- Shortcuts Functions ---
-  const updateShortcuts = async (updates) => {
-    setShortcuts((prev) => ({ ...prev, ...updates }));
+  const updateShortcuts = async updates => {
+    setShortcuts(prev => ({ ...prev, ...updates }));
     const user = auth().currentUser;
     if (!user) return;
-    await firestore().collection('users').doc(user.uid).set(
-      { shortcuts: { ...shortcuts, ...updates } },
-      { merge: true }
-    );
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ shortcuts: { ...shortcuts, ...updates } }, { merge: true });
   };
 
   // --- Emergency Contacts Functions ---
-  const updateEmergencyContacts = async (contacts) => {
+  const updateEmergencyContacts = async contacts => {
     setEmergencyContacts(contacts);
     const user = auth().currentUser;
     if (!user) return;
@@ -141,25 +162,69 @@ export const UserProvider = ({ children }) => {
     );
   };
 
-  return (
-    <UserContext.Provider
-      value={{
-        userProfile,
-        updateProfile,
-        uploadProfilePic,
-        permissions,
-        updatePermissions,
-        shortcuts,
-        updateShortcuts,
-        emergencyContacts,
-        updateEmergencyContacts,
-        setUserProfile,
-        setPermissions,
-        setShortcuts,
-        setEmergencyContacts,
-      }}
-    >
-      {children}
-    </UserContext.Provider>
-  );
+  // --- Incidents Functions ---
+  const updateIncidents = newIncidents => setIncidents(newIncidents);
+
+  const voteOnIncident = (incidentId, voteType, voterUsername) => {
+    setIncidents(prev =>
+      prev
+        .map(incident => {
+          if (incident.id !== incidentId) return incident;
+
+          const upvotes = incident.upvotes || [];
+          const downvotes = incident.downvotes || [];
+
+          const newUpvotes = upvotes.filter(u => u !== voterUsername);
+          const newDownvotes = downvotes.filter(u => u !== voterUsername);
+
+          if (voteType === 'upvote') newUpvotes.push(voterUsername);
+          else newDownvotes.push(voterUsername);
+
+          return { ...incident, upvotes: newUpvotes, downvotes: newDownvotes };
+        })
+        .filter(incident => {
+          const upvoteCount = incident.upvotes?.length || 0;
+          const downvoteCount = incident.downvotes?.length || 0;
+          const totalVotes = upvoteCount + downvoteCount;
+          if (downvoteCount <= 20) return true;
+          if (totalVotes === 0) return true;
+          return downvoteCount / totalVotes <= 0.9;
+        })
+    );
+  };
+
+  const deleteIncident = incidentId => {
+    setIncidents(prev => prev.filter(incident => incident.id !== incidentId));
+  };
+
+  const updateIncident = (incidentId, updates) => {
+    setIncidents(prev =>
+      prev.map(incident =>
+        incident.id === incidentId
+          ? { ...incident, ...updates, editedAt: new Date().toISOString() }
+          : incident
+      )
+    );
+  };
+
+  const value = {
+    userProfile,
+    updateProfile,
+    uploadProfilePic,
+    permissions,
+    updatePermissions,
+    shortcuts,
+    updateShortcuts,
+    emergencyContacts,
+    updateEmergencyContacts,
+    incidents,
+    updateIncidents,
+    voteOnIncident,
+    deleteIncident,
+    updateIncident,
+    dangerRadius,
+    setDangerRadius,
+  };
+
+  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
 };
