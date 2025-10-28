@@ -15,7 +15,7 @@ const _layout = () => {
           headerLargeTitleShadowVisible: false,
           headerLargeTitle: true
         }}>
-          <Stack.Screen name="index" />
+          <Stack.Screen name="initial" />
           <Stack.Screen name="(auth)/login" options={{headerShown: true, title: 'Log In'}} />
           <Stack.Screen name="(auth)/register" options={{headerShown: true, title: 'Register'}} />
           <Stack.Screen name="(settings)/settings" />

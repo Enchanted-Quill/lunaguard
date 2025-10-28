@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React from "react";
 import {
   View,
   Text,
@@ -10,36 +10,47 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useUser } from "../../context/UserContext";
+import auth from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 export default function SettingsScreen() {
   const router = useRouter();
-  const { username, name, email, phone, profilePic, contacts, shortcuts } = useUser();
+  const {
+    userProfile,
+    emergencyContacts = [],
+    shortcuts = {},
+  } = useUser();
+
+  const { username, name, phone = "N/A", profilePic } = userProfile;
 
   return (
-    <LinearGradient
-      colors={["#521684", "#1c052f"]}
-      style={styles.container}
-    >
+    <LinearGradient colors={["#521684", "#1c052f"]} style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContainer}>
-        {/* Header (title & edit button) */}
+        {/* Header */}
         <View style={styles.header}>
           <Text style={styles.title}>Settings</Text>
           <TouchableOpacity onPress={() => router.push("/changesettings")}>
-            <Image source={require("../../assets/edit.png")} style={styles.editIcon} />
+            <Image
+              source={require("../../assets/edit.png")}
+              style={styles.editIcon}
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Profile section */}
+        {/* Profile Section */}
         <Text style={styles.sectionTitle}>Profile</Text>
         <View style={styles.profileRow}>
           <Image
-            source={profilePic ? { uri: profilePic } : require("../../assets/pfp.jpg")}
+            source={
+              profilePic ? { uri: profilePic } : require("../../assets/pfp.jpg")
+            }
             style={styles.profilePic}
           />
           <View style={styles.profileInfo}>
-            <Text style={styles.profileText}>Username: {username}</Text>
-            <Text style={styles.profileText}>Name: {name}</Text>
-            <Text style={styles.profileText}>Email: {email}</Text>
+            <Text style={styles.profileText}>
+              Username: {username || "N/A"}
+            </Text>
+            <Text style={styles.profileText}>Name: {name || "N/A"}</Text>
             <Text style={styles.profileText}>Phone Number: {phone}</Text>
           </View>
         </View>
@@ -47,50 +58,69 @@ export default function SettingsScreen() {
         {/* Emergency Contacts */}
         <Text style={styles.sectionTitle}>Emergency Contacts</Text>
         <View style={styles.table}>
-          {/* Table header */}
           <View style={[styles.tableRow, styles.tableHeader]}>
             <Text style={[styles.tableText, styles.headerText]}>Name</Text>
-            <Text style={[styles.tableText, styles.headerText]}>Email</Text>
             <Text style={[styles.tableText, styles.headerText]}>Phone #</Text>
           </View>
-          {/* Table rows */}
-          {contacts.map((c, i) => (
-            <View style={styles.tableRow} key={i}>
-              <Text style={styles.tableText}>{c.name}</Text>
-              <Text style={styles.tableText}>{c.email}</Text>
-              <Text style={styles.tableText}>{c.phone}</Text>
+          {emergencyContacts.length ? (
+            emergencyContacts.map((c, i) => (
+              <View style={styles.tableRow} key={i}>
+                <Text style={styles.tableText}>{c.name || "N/A"}</Text>
+                <Text style={styles.tableText}>{c.phone || "N/A"}</Text>
+              </View>
+            ))
+          ) : (
+            <View style={styles.tableRow}>
+              <Text style={styles.tableText}>No contacts added</Text>
             </View>
-          ))}
+          )}
         </View>
 
         {/* Shortcuts */}
         <Text style={styles.sectionTitle}>Shortcuts</Text>
-        <View style={styles.shortcutRow}>
-          <View style={styles.button}>
-            <Text style={styles.buttonText}>Tap side bar twice</Text>
-          </View>
-          <Text style={styles.shortcutLabel}>{shortcuts.shortcut1}</Text>
-        </View>
-        <View style={styles.shortcutRow}>
-          <View style={styles.button}>
-            <Text style={styles.buttonText}>Press home button 3 times</Text>
-          </View>
-          <Text style={styles.shortcutLabel}>{shortcuts.shortcut2}</Text>
-        </View>
+        {Object.entries(shortcuts).length ? (
+          Object.entries(shortcuts).map(([key, value]) => (
+            <View style={styles.shortcutRow} key={key}>
+              <View style={styles.button}>
+                <Text style={styles.buttonText}>
+                  {key.replace(/([A-Z])/g, " $1")}
+                </Text>
+              </View>
+              <Text style={styles.shortcutLabel}>{value}</Text>
+            </View>
+          ))
+        ) : (
+          <Text style={{ color: "#fff", marginVertical: 5 }}>
+            No shortcuts set
+          </Text>
+        )}
+        <TouchableOpacity
+          style={styles.signOutButton}
+          onPress={async () => {
+            try {
+              // Sign out from Firebase
+              await auth().signOut();
+
+              // Sign out from Google
+              await GoogleSignin.signOut();
+
+              // Optionally navigate back to login screen
+              router.push("/");
+            } catch (error) {
+              console.error("Sign out error:", error);
+            }
+          }}
+        >
+          <Text style={styles.signOutText}>Sign Out</Text>
+        </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
-  scrollContainer: {
-    padding: 20,
-    paddingBottom: 40,
-    flexGrow: 1,
-  },
+  container: { flex: 1 },
+  scrollContainer: { padding: 20, paddingBottom: 40, flexGrow: 1 },
   header: {
     flexDirection: "row",
     justifyContent: "center",
@@ -98,41 +128,13 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     marginTop: 40,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#fff",
-    marginRight: 10,
-  },
-  editIcon: {
-    width: 40,
-    height: 40,
-  },
-  sectionTitle: {
-    fontSize: 22,
-    fontWeight: "bold",
-    color: "#fff",
-    marginVertical: 6,
-  },
-  profileRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  profilePic: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    marginRight: 15,
-  },
-  profileInfo: {
-    flex: 1,
-  },
-  profileText: {
-    fontSize: 16,
-    color: "#fff",
-    marginBottom: 4,
-  },
+  title: { fontSize: 32, fontWeight: "bold", color: "#fff", marginRight: 10 },
+  editIcon: { width: 40, height: 40 },
+  sectionTitle: { fontSize: 22, fontWeight: "bold", color: "#fff", marginVertical: 6 },
+  profileRow: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
+  profilePic: { width: 80, height: 80, borderRadius: 40, marginRight: 15 },
+  profileInfo: { flex: 1 },
+  profileText: { fontSize: 16, color: "#fff", marginBottom: 4 },
   table: {
     borderWidth: 1,
     borderColor: "#652a9c",
@@ -147,22 +149,10 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#652a9c",
   },
-  tableHeader: {
-    backgroundColor: "#aa63d2",
-  },
-  tableText: {
-    flex: 1,
-    color: "#fff",
-    textAlign: "center",
-  },
-  headerText: {
-    fontWeight: "bold",
-  },
-  shortcutRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginVertical: 8,
-  },
+  tableHeader: { backgroundColor: "#aa63d2" },
+  tableText: { flex: 1, color: "#fff", textAlign: "center" },
+  headerText: { fontWeight: "bold" },
+  shortcutRow: { flexDirection: "row", alignItems: "center", marginVertical: 8 },
   button: {
     backgroundColor: "#652a9c",
     borderRadius: 25,
@@ -172,15 +162,20 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     alignItems: "center",
   },
-  buttonText: {
-    color: "#e0c8c4",
-    fontSize: 16,
-    fontWeight: "600",
-    textAlign: "center",
-  },
-  shortcutLabel: {
-    color: "#fff",
-    fontSize: 16,
-    marginLeft: 10,
-  },
+  buttonText: { color: "#e0c8c4", fontSize: 16, fontWeight: "600", textAlign: "center" },
+  shortcutLabel: { color: "#fff", fontSize: 16, marginLeft: 10 },
+  signOutButton: {
+  backgroundColor: "#d94c4c",
+  borderRadius: 25,
+  paddingVertical: 12,
+  paddingHorizontal: 15,
+  alignItems: "center",
+  marginTop: 30,
+},
+signOutText: {
+  color: "#fff",
+  fontSize: 16,
+  fontWeight: "600",
+},
+
 });

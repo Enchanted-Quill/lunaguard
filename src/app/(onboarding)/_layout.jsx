@@ -1,22 +1,20 @@
-import { Stack } from "expo-router";
-import { StyleSheet, View } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import React from 'react';
+import { Stack } from 'expo-router'
 
-export default function Layout() {
+const OnboardingNavigator = () => {
   return (
-    <View style={styles.container}>
-      <Stack screenOptions={{ headerShown: false }} />
-    </View>
+    <Stack
+      screenOptions={{
+        headerShown: false,
+        cardStyle: { backgroundColor: 'transparent' }
+      }}
+    >
+      <Stack.Screen name="onboarding1" />
+      <Stack.Screen name="onboarding2" />
+      <Stack.Screen name="onboarding3" />
+      <Stack.Screen name="onboarding4" />
+    </Stack>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor:
-    <LinearGradient
-      colors={["#521684", "#1c052f"]}
-      style={StyleSheet.absoluteFill}
-    />
-  }
-});
+export default OnboardingNavigator;

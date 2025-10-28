@@ -1,115 +1,165 @@
 // context/UserContext.js
-import React, { createContext, useState, useContext } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
 
 const UserContext = createContext();
 
+export const useUser = () => useContext(UserContext);
+
 export const UserProvider = ({ children }) => {
-  // User profile state
-  const [username, setUsername] = useState("soggydollar");
-  const [name, setName] = useState("Sarah");
-  const [email, setEmail] = useState("sarah@gmail.com");
-  const [phone, setPhone] = useState("0123456789");
-  const [profilePic, setProfilePic] = useState(null);
-
-  // Emergency contacts state
-  const [contacts, setContacts] = useState([
-    { name: "Contact 1", email: "a@gmail.com", phone: "0123456789" },
-  ]);
-
-  // Shortcuts state
-  const [shortcuts, setShortcuts] = useState({
-    shortcut1: "SOS",
-    shortcut2: "Fake Call",
+  // --- User Profile ---
+  const [userProfile, setUserProfile] = useState({
+    name: '',
+    phone: '',
+    username: '',
+    profilePic: null,
   });
 
-  // Incidents state for map
-  const [incidents, setIncidents] = useState([
-    // Example incident for testing
-    {
-      id: '1',
-      title: 'Suspicious Activity',
-      location: { latitude: 34.0522, longitude: -118.2437 },
-      time: new Date().toISOString(),
-      description: 'Person following individuals in parking lot',
-      reportedBy: 'soggydollar',
-    }
+  // --- Permissions ---
+  const [permissions, setPermissions] = useState({
+    camera: false,
+    contacts: false,
+    location: false,
+    notifications: false,
+  });
+
+  // --- Shortcuts ---
+  const [shortcuts, setShortcuts] = useState({
+    sos: 'Press 3 times',
+    fakeCall: 'Shake phone',
+    emergency: 'Hold volume down',
+  });
+
+  // --- Emergency Contacts ---
+  const [emergencyContacts, setEmergencyContacts] = useState([
+    { name: '', phone: '' },
+    { name: '', phone: '' },
+    { name: '', phone: '' },
   ]);
 
-  // Function to update profile
-  const updateProfile = (profileData) => {
-    if (profileData.username !== undefined) setUsername(profileData.username);
-    if (profileData.name !== undefined) setName(profileData.name);
-    if (profileData.email !== undefined) setEmail(profileData.email);
-    if (profileData.phone !== undefined) setPhone(profileData.phone);
-    if (profileData.profilePic !== undefined) setProfilePic(profileData.profilePic);
-  };
+  // --- Load user data on app start ---
+  useEffect(() => {
+    const loadUserData = async () => {
+      const user = auth().currentUser;
+      if (!user) return;
 
-  // Function to add contact
-  const addContact = (contact) => {
-    setContacts([...contacts, contact]);
-  };
+      const userRef = firestore().collection('users').doc(user.uid);
+      const docSnap = await userRef.get();
 
-  // Function to update contacts
-  const updateContacts = (newContacts) => {
-    setContacts(newContacts);
-  };
-
-  // Function to update shortcuts
-  const updateShortcuts = (newShortcuts) => {
-    setShortcuts(newShortcuts);
-  };
-
-  // Function to add incident
-  const addIncident = (incident) => {
-    const newIncident = {
-      ...incident,
-      id: Date.now().toString(),
-      time: new Date().toISOString(),
-      reportedBy: username,
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data.userProfile) setUserProfile(data.userProfile);
+        if (data.permissions) setPermissions(data.permissions);
+        if (data.shortcuts) setShortcuts(data.shortcuts);
+        if (data.emergencyContacts) setEmergencyContacts(data.emergencyContacts);
+      } else {
+        // Create default Firestore doc if it doesn't exist
+        await userRef.set({
+          userProfile: {
+            name: user.displayName || '',
+            username: user.displayName || '',
+            phone: user.phoneNumber || '',
+            profilePic: null,
+          },
+          permissions,
+          shortcuts,
+          emergencyContacts,
+        });
+      }
     };
-    setIncidents([...incidents, newIncident]);
+
+    loadUserData();
+  }, []);
+
+  // --- Profile Functions ---
+  const updateProfile = async (updates) => {
+    setUserProfile((prev) => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore().collection('users').doc(user.uid).set(
+      { userProfile: { ...userProfile, ...updates } },
+      { merge: true }
+    );
   };
 
-  // Function to update incidents
-  const updateIncidents = (newIncidents) => {
-    setIncidents(newIncidents);
+  const uploadProfilePic = async (localUri) => {
+    if (!localUri) return null;
+    const user = auth().currentUser;
+    if (!user) return null;
+
+    try {
+      const fileName = localUri.split('/').pop();
+      const storageRef = storage().ref(`profilePics/${user.uid}/${fileName}`);
+
+      // Upload local file directly
+      await storageRef.putFile(localUri);
+
+      // Get download URL
+      const downloadURL = await storageRef.getDownloadURL();
+
+      // Update Firestore and local context
+      await updateProfile({ profilePic: downloadURL });
+      return downloadURL;
+    } catch (err) {
+      console.error('Firebase Storage upload error:', err);
+      return null;
+    }
   };
 
-  const value = {
-    // Profile data
-    username,
-    name,
-    email,
-    phone,
-    profilePic,
-    // Contacts
-    contacts,
-    // Shortcuts
-    shortcuts,
-    // Incidents
-    incidents,
-    // Update functions
-    updateProfile,
-    addContact,
-    updateContacts,
-    updateShortcuts,
-    addIncident,
-    updateIncidents,
-    setUsername,
-    setName,
-    setEmail,
-    setPhone,
-    setProfilePic,
+  // --- Permissions Functions ---
+  const updatePermissions = async (updates) => {
+    setPermissions((prev) => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore().collection('users').doc(user.uid).set(
+      { permissions: { ...permissions, ...updates } },
+      { merge: true }
+    );
   };
 
-  return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
-};
+  // --- Shortcuts Functions ---
+  const updateShortcuts = async (updates) => {
+    setShortcuts((prev) => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore().collection('users').doc(user.uid).set(
+      { shortcuts: { ...shortcuts, ...updates } },
+      { merge: true }
+    );
+  };
 
-// Custom hook to use the context
-export const useUser = () => {
-  const context = useContext(UserContext);
-  if (!context) {
-    throw new Error('useUser must be used within a UserProvider');
-  }
-  return context;
+  // --- Emergency Contacts Functions ---
+  const updateEmergencyContacts = async (contacts) => {
+    setEmergencyContacts(contacts);
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore().collection('users').doc(user.uid).set(
+      { emergencyContacts: contacts },
+      { merge: true }
+    );
+  };
+
+  return (
+    <UserContext.Provider
+      value={{
+        userProfile,
+        updateProfile,
+        uploadProfilePic,
+        permissions,
+        updatePermissions,
+        shortcuts,
+        updateShortcuts,
+        emergencyContacts,
+        updateEmergencyContacts,
+        setUserProfile,
+        setPermissions,
+        setShortcuts,
+        setEmergencyContacts,
+      }}
+    >
+      {children}
+    </UserContext.Provider>
+  );
 };
