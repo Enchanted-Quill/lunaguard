@@ -11,7 +11,7 @@ import { useRouter } from "expo-router";
 const OnboardingScreen3 = ({ }) => {
   const router = useRouter();
 
-  const { updatePermissions, setShortcuts } = useUser();
+  const { updatePermissions, updateShortcuts } = useUser();
 
   const [permissions, setPermissionsLocal] = useState({
     camera: false,
@@ -58,7 +58,7 @@ const OnboardingScreen3 = ({ }) => {
   const handleNext = () => {
     // Update context only
     updatePermissions(permissions);
-    setShortcuts(shortcuts);
+    updateShortcuts(shortcuts);
 
     // Navigate to next screen
     router.push('/onboarding4');

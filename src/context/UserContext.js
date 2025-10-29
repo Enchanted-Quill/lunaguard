@@ -162,8 +162,24 @@ export const UserProvider = ({ children }) => {
     );
   };
 
+    // Function to add incident
+  const addIncident = (incident) => {
+    const { username } = userProfile;
+    const newIncident = {
+      ...incident,
+      id: Date.now().toString(),
+      time: new Date().toISOString(),
+      reportedBy: username,
+    };
+    setIncidents([...incidents, newIncident]);
+  };
+
+  // Function to update incidents
+  const updateIncidents = (newIncidents) => {
+    setIncidents(newIncidents);
+  };
+
   // --- Incidents Functions ---
-  const updateIncidents = newIncidents => setIncidents(newIncidents);
 
   const voteOnIncident = (incidentId, voteType, voterUsername) => {
     setIncidents(prev =>
@@ -218,6 +234,7 @@ export const UserProvider = ({ children }) => {
     emergencyContacts,
     updateEmergencyContacts,
     incidents,
+    addIncident,
     updateIncidents,
     voteOnIncident,
     deleteIncident,

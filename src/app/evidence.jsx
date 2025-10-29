@@ -11,7 +11,10 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
 import { Audio, Video } from "expo-av";
+import * as SMS from "expo-sms";
+import * as KeepAwake from "expo-keep-awake";
 import storage from "@react-native-firebase/storage";
+import auth from "@react-native-firebase/auth";
 
 const contacts = [
   { name: "Alice", phone: "1234567890" },
@@ -22,17 +25,49 @@ export default function EvidenceLocker() {
   const [mediaItems, setMediaItems] = useState([]);
   const [importCount, setImportCount] = useState(1);
   const [recording, setRecording] = useState(null);
-  const [soundObjects, setSoundObjects] = useState({}); // Store Audio.Sound objects
+  const [soundObjects, setSoundObjects] = useState({});
 
+  const user = auth().currentUser;
+  KeepAwake.useKeepAwake();
+
+  // Fetch user's media from Firebase Storage
+  useEffect(() => {
+    const fetchMedia = async () => {
+      if (!user) return;
+      try {
+        const types = ["images", "videos", "audios"];
+        const allItems = [];
+
+        for (const type of types) {
+          const folderRef = storage().ref(`evidence/${user.uid}/${type}`);
+          const listResult = await folderRef.listAll();
+          const items = await Promise.all(
+            listResult.items.map(async (ref) => {
+              const uri = await ref.getDownloadURL();
+              return { type: type.slice(0, -1), uri, name: ref.name };
+            })
+          );
+          allItems.push(...items);
+        }
+
+        setMediaItems(allItems);
+      } catch (err) {
+        console.error(err);
+        Alert.alert("Error", "Failed to fetch media.");
+      }
+    };
+
+    fetchMedia();
+  }, [user]);
+
+  // Upload media to user's folder
   const uploadToFirebase = async (uri, type, name) => {
+    if (!user) return;
     try {
-      const fileRef = storage().ref(`${type}s/${name}`);
+      const fileRef = storage().ref(`evidence/${user.uid}/${type}s/${name}`);
       await fileRef.putFile(uri);
       const url = await fileRef.getDownloadURL();
-      setMediaItems((prev) => [
-        ...prev,
-        { type, uri: url, name },
-      ]);
+      setMediaItems((prev) => [{ type, uri: url, name }, ...prev]);
       Alert.alert("Uploaded", `${type} uploaded successfully!`);
     } catch (err) {
       console.error(err);
@@ -52,7 +87,6 @@ export default function EvidenceLocker() {
         const type = asset.type === "image" ? "image" : "video";
         const name = `Imported_${importCount}`;
         setImportCount(importCount + 1);
-        setMediaItems((prev) => [...prev, { type, uri: asset.uri, name }]);
         await uploadToFirebase(asset.uri, type, name);
       }
     } catch (err) {
@@ -115,7 +149,6 @@ export default function EvidenceLocker() {
 
   const playAudio = async (uri, name) => {
     try {
-      // Stop previous if playing
       if (soundObjects[name]) {
         await soundObjects[name].stopAsync();
         await soundObjects[name].unloadAsync();
@@ -127,6 +160,25 @@ export default function EvidenceLocker() {
     } catch (err) {
       console.error(err);
       Alert.alert("Error", "Failed to play audio.");
+    }
+  };
+
+  const sendToContactSMS = async (item) => {
+    const phoneNumbers = contacts.map((c) => c.phone);
+    const isAvailable = await SMS.isAvailableAsync();
+    if (!isAvailable) {
+      Alert.alert("Error", "SMS not available on this device.");
+      return;
+    }
+    try {
+      await SMS.sendSMSAsync(
+        phoneNumbers,
+        `Evidence: ${item.name}\n${item.uri}`
+      );
+      Alert.alert("Sent", `${item.name} sent via SMS.`);
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to send SMS.");
     }
   };
 
@@ -172,9 +224,19 @@ export default function EvidenceLocker() {
                   style={styles.audioBox}
                   onPress={() => playAudio(item.uri, item.name)}
                 >
-                  <Text style={{ color: "#fff", textAlign: "center" }}>Play Audio</Text>
+                  <Text style={{ color: "#fff", textAlign: "center" }}>
+                    Play Audio
+                  </Text>
                 </TouchableOpacity>
               )}
+              <TouchableOpacity
+                style={styles.sendButton}
+                onPress={() => sendToContactSMS(item)}
+              >
+                <Text style={{ color: "#fff", textAlign: "center" }}>
+                  Send via SMS
+                </Text>
+              </TouchableOpacity>
             </View>
           ))}
         </View>
@@ -213,5 +275,11 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     justifyContent: "center",
     marginBottom: 10,
+  },
+  sendButton: {
+    backgroundColor: "#4CAF50",
+    borderRadius: 8,
+    paddingVertical: 6,
+    marginTop: 4,
   },
 });

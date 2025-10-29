@@ -1,3 +1,4 @@
+// SettingsScreen.js
 import React from "react";
 import {
   View,
@@ -10,8 +11,6 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useUser } from "../../context/UserContext";
-import auth from '@react-native-firebase/auth';
-import { GoogleSignin } from '@react-native-google-signin/google-signin';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -19,6 +18,7 @@ export default function SettingsScreen() {
     userProfile,
     emergencyContacts = [],
     shortcuts = {},
+    dangerRadius = 1,
   } = useUser();
 
   const { username, name, phone = "N/A", profilePic } = userProfile;
@@ -78,23 +78,21 @@ export default function SettingsScreen() {
 
         {/* Shortcuts */}
         <Text style={styles.sectionTitle}>Shortcuts</Text>
-        <View style={styles.shortcutRow}>
-          <View style={styles.button}>
-            <Text style={styles.buttonText}>Tap side bar twice</Text>
+        {["shortcut1", "shortcut2"].map((key, i) => (
+          <View style={styles.shortcutRow} key={i}>
+            <View style={styles.button}>
+              <Text style={styles.buttonText}>
+                {i === 0 ? "Tap side bar twice" : "Press home button 3 times"}
+              </Text>
+            </View>
+            <Text style={styles.shortcutLabel}>{shortcuts[key]}</Text>
           </View>
-          <Text style={styles.shortcutLabel}>{shortcuts.shortcut1}</Text>
-        </View>
-        <View style={styles.shortcutRow}>
-          <View style={styles.button}>
-            <Text style={styles.buttonText}>Press home button 3 times</Text>
-          </View>
-          <Text style={styles.shortcutLabel}>{shortcuts.shortcut2}</Text>
-        </View>
+        ))}
 
         {/* Danger Radius */}
         <Text style={styles.sectionTitle}>Danger Radius</Text>
         <Text style={styles.profileText}>
-          Current radius: {dangerRadius} mile{dangerRadius !== 1 ? 's' : ''}
+          Current radius: {dangerRadius} mile{dangerRadius !== 1 ? "s" : ""}
         </Text>
         <Text style={[styles.profileText, { fontSize: 14, marginTop: 5 }]}>
           Routes will avoid incidents within this distance.
@@ -150,18 +148,4 @@ const styles = StyleSheet.create({
   },
   buttonText: { color: "#e0c8c4", fontSize: 16, fontWeight: "600", textAlign: "center" },
   shortcutLabel: { color: "#fff", fontSize: 16, marginLeft: 10 },
-  signOutButton: {
-  backgroundColor: "#d94c4c",
-  borderRadius: 25,
-  paddingVertical: 12,
-  paddingHorizontal: 15,
-  alignItems: "center",
-  marginTop: 30,
-},
-signOutText: {
-  color: "#fff",
-  fontSize: 16,
-  fontWeight: "600",
-},
-
 });
