@@ -1,0 +1,20 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Allow authenticated users to upload SOS chunks
+    match /sos-sessions/{sessionId}/{allPaths=**} {
+      allow write: if request.auth != null;
+      allow read: if request.auth != null ||
+                     request.auth.token.sessionId == sessionId;
+    }
+
+    // Allow authenticated users to upload evidence
+    match /evidence/{userId}/{allPaths=**} {
+      allow write: if request.auth != null && request.auth.uid == userId;
+      allow read: if request.auth != null && request.auth.uid == userId;
+    }
+    match /profilePics/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+    }
+  }
+}

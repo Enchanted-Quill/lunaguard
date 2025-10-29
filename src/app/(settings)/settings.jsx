@@ -10,6 +10,7 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useUser } from "../../context/UserContext";
+import PermissionManager from '../utils/permissionManager';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -86,6 +87,11 @@ export default function SettingsScreen() {
         <Text style={[styles.profileText, { fontSize: 14, marginTop: 5 }]}>
           Routes will avoid incidents within this distance.
         </Text>
+
+        {/* Permissions Button */}
+        <TouchableOpacity onPress={() => PermissionManager.requestAllPermissions()}>
+          <Text>Request Permissions</Text>
+        </TouchableOpacity>
       </ScrollView>
     </LinearGradient>
   );

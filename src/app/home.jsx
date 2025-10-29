@@ -1,19 +1,107 @@
+import React, { useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Image,
+  Alert,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useUser } from "../context/UserContext";
+import SOSService from "../utils/sosService";
 
 //Finds saved logo in assets
 const logo = require("../assets/logo.png");
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { username, contacts } = useUser();
+  const [sosActive, setSosActive] = useState(false);
+  const [sosLoading, setSosLoading] = useState(false);
+
+  const handleSOS = async () => {
+    if (sosActive) {
+      // Stop SOS
+      Alert.alert(
+        'End SOS',
+        'Are you sure you want to end the emergency session?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'End SOS',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setSosLoading(true);
+                await SOSService.stopSOS();
+                setSosActive(false);
+                Alert.alert(
+                  'SOS Ended',
+                  'Emergency session has been ended. Recording saved to Evidence Locker.'
+                );
+              } catch (error) {
+                console.error('Error ending SOS:', error);
+                Alert.alert('Error', 'Failed to end SOS session');
+              } finally {
+                setSosLoading(false);
+              }
+            },
+          },
+        ]
+      );
+    } else {
+      // Start SOS
+      Alert.alert(
+        'Start SOS',
+        'This will start emergency recording and alert your contacts. Continue?',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Start SOS',
+            style: 'destructive',
+            onPress: async () => {
+              try {
+                setSosLoading(true);
+
+                // Check if contacts exist
+                if (!contacts || contacts.length === 0) {
+                  Alert.alert(
+                    'No Emergency Contacts',
+                    'Please add emergency contacts in Settings before using SOS.'
+                  );
+                  setSosLoading(false);
+                  return;
+                }
+
+                // Start SOS
+                const result = await SOSService.startSOS(username, contacts);
+
+                setSosActive(true);
+
+                Alert.alert(
+                  'SOS Active',
+                  `Emergency recording started. Your contacts have been notified.\n\nViewer Link: ${result.viewerLink}`,
+                  [{ text: 'OK' }]
+                );
+              } catch (error) {
+                console.error('Error starting SOS:', error);
+                Alert.alert(
+                  'Error',
+                  `Failed to start SOS: ${error.message}\n\nPlease check your permissions in Settings.`
+                );
+              } finally {
+                setSosLoading(false);
+              }
+            },
+          },
+        ]
+      );
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -42,7 +130,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.button}
           activeOpacity={0.5}
-          onPress={() => router.push("/(settings)/settings")} // Navigate to settings
+          onPress={() => router.push("/settings")}
         >
           <Text style={styles.buttonText}>Settings</Text>
         </TouchableOpacity>
@@ -51,7 +139,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.button}
           activeOpacity={0.5}
-          onPress={() => router.push("/map")} // Navigate to map
+          onPress={() => router.push("/map")}
         >
           <Text style={styles.buttonText}>Map</Text>
         </TouchableOpacity>
@@ -60,7 +148,7 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.button}
           activeOpacity={0.5}
-          onPress={() => router.push("/chat")} // Navigate to Empowerment Circles
+          onPress={() => router.push("/chat")}
         >
           <Text style={styles.buttonText}>Empowerment Circles</Text>
         </TouchableOpacity>
@@ -69,22 +157,42 @@ export default function HomeScreen() {
         <TouchableOpacity
           style={styles.button}
           activeOpacity={0.5}
-          onPress={() => router.push("/evidence")} // Navigate to evidence locker
+          onPress={() => router.push("/evidence")}
         >
           <Text style={styles.buttonText}>Evidence Locker</Text>
         </TouchableOpacity>
 
         {/* SOS Button */}
         <TouchableOpacity
-          style={styles.emergencyButton}
+          style={[
+            styles.emergencyButton,
+            sosActive && styles.emergencyButtonActive
+          ]}
           activeOpacity={0.5}
+          onPress={handleSOS}
+          disabled={sosLoading}
         >
-        <LinearGradient
-        colors={["#eb697c", "#7e1067"]}
-        style= {styles.gradientBackground}
-        />
-          <Text style={styles.buttonText}>SOS</Text>
+          <LinearGradient
+            colors={sosActive ? ["#4caf50", "#2e7d32"] : ["#eb697c", "#7e1067"]}
+            style={styles.gradientBackground}
+          />
+          {sosLoading ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {sosActive ? "End SOS" : "SOS"}
+            </Text>
+          )}
         </TouchableOpacity>
+
+        {sosActive && (
+          <View style={styles.sosIndicator}>
+            <View style={styles.sosPulse} />
+            <Text style={styles.sosIndicatorText}>
+              🔴 Recording Active
+            </Text>
+          </View>
+        )}
 
       </SafeAreaView>
     </View>
@@ -143,7 +251,11 @@ const styles = StyleSheet.create({
     width: 200,
     marginVertical: 8,
     alignSelf: "center",
-    alignItems: "center"
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emergencyButtonActive: {
+    // Active state styling handled by gradient
   },
   gradientBackground: {
     position: 'absolute',
@@ -152,5 +264,24 @@ const styles = StyleSheet.create({
     top: 0,
     bottom: 0,
     borderRadius: 25
-  }
+  },
+  sosIndicator: {
+    marginTop: 20,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  sosPulse: {
+    position: 'absolute',
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: '#ff0000',
+    top: 5,
+    left: -20,
+  },
+  sosIndicatorText: {
+    color: '#ff6b6b',
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });

@@ -20,6 +20,18 @@
       }
     },
     "android": {
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_EXTERNAL_STORAGE",
+        "FOREGROUND_SERVICE",
+        "WAKE_LOCK",
+        "ACCESS_NETWORK_STATE",
+        "SEND_SMS"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./src/assets/logo.png",
         "backgroundColor": "#301934"
@@ -39,9 +51,19 @@
       "expo-router",
       "expo-video",
       "expo-audio",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Allow LunaGuard to access your camera for emergency recording.",
+          "microphonePermission": "Allow LunaGuard to access your microphone for emergency recording.",
+          "recordAudioAndroid": true
+        }
+      ],
       ["expo-location",
       {
-        "locationAlwaysAndWhenInUsePermission": "Allow $(PRODUCT_NAME) to use your location for safety features."
+        "locationAlwaysAndWhenInUsePermission": "Allow LunaGuard to access your location for emergency alerts.",
+        "locationAlwaysPermission": "Allow LunaGuard to access your location in the background for emergency alerts.",
+        "locationWhenInUsePermission": "Allow LunaGuard to access your location for emergency alerts."
       }]
     ]
   }
