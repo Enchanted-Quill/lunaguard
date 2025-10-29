@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LunaGuard - Emergency Stream</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #521684 0%, #1c052f 100%);
+            color: #fff;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .luna {
+            color: #e1c8f5;
+        }
+
+        .guard {
+            color: #ac78cf;
+        }
+
+        .alert-badge {
+            display: inline-block;
+            background: #eb697c;
+            color: #fff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 600;
+            margin-top: 10px;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+
+        .status-bar {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+            font-size: 14px;
+        }
+
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-label {
+            color: #ac78cf;
+            font-weight: 600;
+        }
+
+        .status-value {
+            color: #e0c8c4;
+        }
+
+        .player-container {
+            background: #000;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            position: relative;
+            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+        }
+
+        #audio-player {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 90%;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            flex: 1;
+            background: #652a9c;
+            color: #e0c8c4;
+            border: none;
+            padding: 14px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn:hover {
+            background: #aa63d2;
+            transform: translateY(-2px);
+        }
+
+        .btn:active {
+            transform: translateY(0);
+        }
+
+        .btn-emergency {
+            background: #eb697c;
+        }
+
+        .btn-emergency:hover {
+            background: #ff8097;
+        }
+
+        .timeline {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .timeline-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #ac78cf;
+        }
+
+        .chunk-list {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .chunk-item {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .chunk-item.playing {
+            background: rgba(170, 99, 210, 0.3);
+            border: 1px solid #aa63d2;
+        }
+
+        .location-map {
+            width: 100%;
+            height: 300px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            color: #ac78cf;
+        }
+
+        .spinner {
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top: 3px solid #aa63d2;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            background: rgba(235, 105, 124, 0.2);
+            border: 1px solid #eb697c;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="logo">
+            <span class="luna">luna</span><span class="guard">guard</span>
+        </div>
+        <div class="alert-badge">🚨 EMERGENCY ALERT ACTIVE</div>
+    </div>
+
+    <div id="loading" class="loading">
+        <div class="spinner"></div>
+        <p>Loading emergency stream...</p>
+    </div>
+
+    <div id="error" class="error" style="display: none;"></div>
+
+    <div id="content" style="display: none;">
+        <div class="status-bar">
+            <div class="status-item">
+                <span class="status-label">User:</span>
+                <span class="status-value" id="username">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Status:</span>
+                <span class="status-value" id="status">Active</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Started:</span>
+                <span class="status-value" id="start-time">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Chunks Received:</span>
+                <span class="status-value" id="chunk-count">0</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Last Update:</span>
+                <span class="status-value" id="last-update">Just now</span>
+            </div>
+        </div>
+
+        <div class="player-container">
+            <audio id="audio-player" controls autoplay></audio>
+        </div>
+
+        <div class="controls">
+            <button class="btn" id="refresh-btn">🔄 Refresh</button>
+            <button class="btn btn-emergency" id="call-911">📞 Call 911</button>
+        </div>
+
+        <div id="map-container" style="display: none;">
+            <iframe id="location-map" class="location-map"></iframe>
+        </div>
+
+        <div class="timeline">
+            <div class="timeline-title">Recording Timeline</div>
+            <div class="chunk-list" id="chunk-list">
+                <p style="color: #ac78cf; text-align: center;">No chunks yet...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+
+<script>
+    const firebaseConfig = {
+        apiKey: "AIzaSyABfu_CZbRMAck-FdPUc-qzrhm2rKJcoB8",
+        authDomain: "lunaguard-304d3.firebaseapp.com",
+        projectId: "lunaguard-304d3",
+        storageBucket: "lunaguard-304d3.firebasestorage.app",
+        messagingSenderId: "877797615505",
+        appId: "1:877797615505:web:55f5e70ffcff74fd909c30"
+    };
+
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+
+    let sessionId = null;
+    let chunks = [];
+    let currentChunkIndex = 0;
+    let unsubscribe = null;
+
+    // Get session ID from URL
+    function getSessionIdFromUrl() {
+        const pathParts = window.location.pathname.split('/');
+        return pathParts[pathParts.length - 1];
+    }
+
+    // Get token from URL
+    function getTokenFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        return params.get('token');
+    }
+
+    // Initialize viewer
+    async function init() {
+        sessionId = getSessionIdFromUrl();
+        const token = getTokenFromUrl();
+
+        if (!sessionId) {
+            showError('Invalid session URL');
+            return;
+        }
+
+        try {
+            // Authenticate with token if provided
+            if (token) {
+                await firebase.auth().signInWithCustomToken(token);
+            }
+
+            // Load session data
+            await loadSession();
+
+            // Listen for new chunks
+            subscribeToChunks();
+
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('content').style.display = 'block';
+        } catch (error) {
+            console.error('Initialization error:', error);
+            showError('Failed to load emergency stream: ' + error.message);
+        }
+    }
+
+    // Load session metadata
+    async function loadSession() {
+        const sessionDoc = await db.collection('sos-sessions').doc(sessionId).get();
+
+        if (!sessionDoc.exists) {
+            throw new Error('Session not found');
+        }
+
+        const sessionData = sessionDoc.data();
+
+        document.getElementById('username').textContent = sessionData.username || 'Unknown';
+        document.getElementById('status').textContent = sessionData.status === 'active' ? '🟢 Active' : '🔴 Ended';
+
+        if (sessionData.startTime) {
+            const startTime = sessionData.startTime.toDate();
+            document.getElementById('start-time').textContent = startTime.toLocaleTimeString();
+        }
+
+        // Show map if location available
+        if (sessionData.location) {
+            const { latitude, longitude } = sessionData.location;
+            const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
+            document.getElementById('location-map').src = mapUrl;
+            document.getElementById('map-container').style.display = 'block';
+        }
+    }
+
+    // Subscribe to chunk updates
+    function subscribeToChunks() {
+        unsubscribe = db.collection('sos-sessions')
+            .doc(sessionId)
+            .collection('chunks')
+            .orderBy('index')
+            .onSnapshot(snapshot => {
+                snapshot.docChanges().forEach(change => {
+                    if (change.type === 'added') {
+                        const chunkData = change.doc.data();
+                        chunks.push(chunkData);
+                        addChunkToTimeline(chunkData);
+
+                        // Auto-play latest chunk
+                        if (chunks.length === 1) {
+                            playChunk(chunkData);
+                        }
+                    }
+                });
+
+                document.getElementById('chunk-count').textContent = chunks.length;
+                updateLastUpdateTime();
+            });
+    }
+
+    // Add chunk to timeline
+    function addChunkToTimeline(chunk) {
+        const chunkList = document.getElementById('chunk-list');
+
+        // Remove placeholder
+        if (chunkList.querySelector('p')) {
+            chunkList.innerHTML = '';
+        }
+
+        const chunkItem = document.createElement('div');
+        chunkItem.className = 'chunk-item';
+        chunkItem.id = `chunk-${chunk.index}`;
+
+        const timestamp = chunk.timestamp ? new Date(chunk.timestamp.toMillis()).toLocaleTimeString() : 'Unknown';
+
+        chunkItem.innerHTML = `
+            <span>Chunk ${chunk.index + 1} - ${timestamp}</span>
+            <span style="color: #ac78cf;">${chunk.mode === 'video' ? '🎥' : '🎤'}</span>
+        `;
+
+        chunkItem.onclick = () => playChunk(chunk);
+        chunkList.appendChild(chunkItem);
+
+        // Scroll to bottom
+        chunkList.scrollTop = chunkList.scrollHeight;
+    }
+
+    // Play specific chunk
+    function playChunk(chunk) {
+        const player = document.getElementById('audio-player');
+        player.src = chunk.url;
+        player.play();
+
+        // Highlight playing chunk
+        document.querySelectorAll('.chunk-item').forEach(item => {
+            item.classList.remove('playing');
+        });
+        document.getElementById(`chunk-${chunk.index}`)?.classList.add('playing');
+
+        currentChunkIndex = chunk.index;
+
+        // Auto-play next chunk when current ends
+        player.onended = () => {
+            const nextChunk = chunks.find(c => c.index === currentChunkIndex + 1);
+            if (nextChunk) {
+                playChunk(nextChunk);
+            }
+        };
+    }
+
+    // Update last update time
+    function updateLastUpdateTime() {
+        document.getElementById('last-update').textContent = 'Just now';
+    }
+
+    // Show error message
+    function showError(message) {
+        document.getElementById('loading').style.display = 'none';
+        document.getElementById('error').style.display = 'block';
+        document.getElementById('error').textContent = message;
+    }
+
+    // Event listeners
+    document.getElementById('refresh-btn').addEventListener('click', () => {
+        location.reload();
+    });
+
+    document.getElementById('call-911').addEventListener('click', () => {
+        window.location.href = 'tel:911';
+    });
+
+    // Cleanup on page unload
+    window.addEventListener('beforeunload', () => {
+        if (unsubscribe) {
+            unsubscribe();
+        }
+    });
+
+    // Start
+    init();
+</script>
+</body>
+</html>
