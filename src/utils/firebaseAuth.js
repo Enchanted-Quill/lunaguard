@@ -1,11 +1,6 @@
 // utils/firebaseAuth.js
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
 import auth from '@react-native-firebase/auth';
-import { initializeApp } from '@react-native-firebase/app';
-
-if (!auth().app) {
-  initializeApp();
-}
 
 // Configure Google Sign-In
 GoogleSignin.configure({
@@ -35,5 +30,4 @@ export const signInWithGoogle = async () => {
       throw error;
     }
 };
-
 

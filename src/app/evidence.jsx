@@ -1,4 +1,3 @@
-// app/evidence.jsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -8,13 +7,14 @@ import {
   TouchableOpacity,
   Alert,
   Image,
-  Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import * as ImagePicker from "expo-image-picker";
+import { Audio, Video } from "expo-av";
 import * as SMS from "expo-sms";
-import { VideoView, useVideoPlayer } from "expo-video";
-import { useAudioPlayer } from "expo-audio";
+import * as KeepAwake from "expo-keep-awake";
+import storage from "@react-native-firebase/storage";
+import auth from "@react-native-firebase/auth";
 
 const contacts = [
   { name: "Alice", phone: "1234567890" },
@@ -22,175 +22,225 @@ const contacts = [
 ];
 
 export default function EvidenceLocker() {
-  const [mediaItems, setMediaItems] = useState([
-    { type: "video", uri: require("../assets/video1.mp4"), name: "video1" },
-    { type: "video", uri: require("../assets/video2.mp4"), name: "video2" },
-    { type: "video", uri: require("../assets/video3.mp4"), name: "video3" },
-    { type: "video", uri: require("../assets/video4.mp4"), name: "video4" },
-    { type: "video", uri: require("../assets/video5.mp4"), name: "video5" },
-    { type: "video", uri: require("../assets/video6.mp4"), name: "video6" },
-  ]);
-
-  const [selectedMedia, setSelectedMedia] = useState(null);
+  const [mediaItems, setMediaItems] = useState([]);
   const [importCount, setImportCount] = useState(1);
+  const [recording, setRecording] = useState(null);
+  const [soundObjects, setSoundObjects] = useState({});
 
-  // Create video player for fullscreen video
-  const fullscreenPlayer = useVideoPlayer(
-    selectedMedia?.type === "video" && selectedMedia?.uri
-      ? typeof selectedMedia.uri === "string"
-        ? selectedMedia.uri
-        : selectedMedia.uri
-      : null,
-    (player) => {
-      if (selectedMedia?.type === "video") {
-        player.play();
+  const user = auth().currentUser;
+  KeepAwake.useKeepAwake();
+
+  // Fetch user's media from Firebase Storage
+  useEffect(() => {
+    const fetchMedia = async () => {
+      if (!user) return;
+      try {
+        const types = ["images", "videos", "audios"];
+        const allItems = [];
+
+        for (const type of types) {
+          const folderRef = storage().ref(`evidence/${user.uid}/${type}`);
+          const listResult = await folderRef.listAll();
+          const items = await Promise.all(
+            listResult.items.map(async (ref) => {
+              const uri = await ref.getDownloadURL();
+              return { type: type.slice(0, -1), uri, name: ref.name };
+            })
+          );
+          allItems.push(...items);
+        }
+
+        setMediaItems(allItems);
+      } catch (err) {
+        console.error(err);
+        Alert.alert("Error", "Failed to fetch media.");
       }
+    };
+
+    fetchMedia();
+  }, [user]);
+
+  // Upload media to user's folder
+  const uploadToFirebase = async (uri, type, name) => {
+    if (!user) return;
+    try {
+      const fileRef = storage().ref(`evidence/${user.uid}/${type}s/${name}`);
+      await fileRef.putFile(uri);
+      const url = await fileRef.getDownloadURL();
+      setMediaItems((prev) => [{ type, uri: url, name }, ...prev]);
+      Alert.alert("Uploaded", `${type} uploaded successfully!`);
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Upload failed", `Failed to upload ${type}.`);
     }
-  );
+  };
 
   const handleImport = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ["images", "videos"], // Updated: replaced MediaTypeOptions with array
+        mediaTypes: ImagePicker.MediaTypeOptions.All,
         allowsMultipleSelection: false,
         quality: 1,
       });
-
-      if (!result.canceled && result.assets && result.assets.length > 0) { // Updated: 'canceled' instead of 'cancelled'
+      if (!result.canceled) {
         const asset = result.assets[0];
-        setMediaItems((prev) => [
-          ...prev,
-          {
-            type: asset.type === "image" ? "image" : "video",
-            uri: asset.uri,
-            name: `Imported ${importCount}`,
-          },
-        ]);
+        const type = asset.type === "image" ? "image" : "video";
+        const name = `Imported_${importCount}`;
         setImportCount(importCount + 1);
-        Alert.alert("Imported", "Media imported and (simulated) uploaded to cloud.");
+        await uploadToFirebase(asset.uri, type, name);
       }
     } catch (err) {
-      console.error("Import error", err);
-      Alert.alert("Import failed", "There was an error importing media.");
+      console.error(err);
+      Alert.alert("Import failed", "Error importing media.");
     }
   };
 
-  const handleExport = async () => {
-    const isAvailable = await SMS.isAvailableAsync();
-    if (!isAvailable) {
-      Alert.alert("Error", "SMS is not available on this device.");
-      return;
-    }
-    const chosenContact = contacts[0];
-    const chosenMedia = mediaItems[0];
+  const startAudioRecording = async () => {
     try {
-      const result = await SMS.sendSMSAsync(
-        [chosenContact.phone],
-        `Evidence shared: ${chosenMedia.name}`
+      await Audio.requestPermissionsAsync();
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: true,
+        playsInSilentModeIOS: true,
+      });
+      const recordingInstance = new Audio.Recording();
+      await recordingInstance.prepareToRecordAsync(
+        Audio.RECORDING_OPTIONS_PRESET_HIGH_QUALITY
       );
-      // result has shape { result } where result is 'sent' or 'cancelled' (platform dependent)
-      // Only show the success alert if the user actually sent the message
-      if (result && (result.result === "sent" || result.result === "unknown" || result.result === "sent")) {
-        // some platforms return 'unknown' or other truthy states - treat them as success
-        Alert.alert("Exported", `Sent message to ${chosenContact.name}.`);
+      await recordingInstance.startAsync();
+      setRecording(recordingInstance);
+      Alert.alert("Recording", "Audio recording started...");
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to start recording.");
+    }
+  };
+
+  const stopAudioRecording = async () => {
+    try {
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      setRecording(null);
+      const name = `Audio_${importCount}`;
+      setImportCount(importCount + 1);
+      await uploadToFirebase(uri, "audio", name);
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to stop recording.");
+    }
+  };
+
+  const startVideoRecording = async () => {
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+        quality: 1,
+      });
+      if (!result.canceled) {
+        const asset = result.assets[0];
+        const name = `Video_${importCount}`;
+        setImportCount(importCount + 1);
+        await uploadToFirebase(asset.uri, "video", name);
       }
     } catch (err) {
-      console.error("SMS send error", err);
+      console.error(err);
+      Alert.alert("Error", "Video recording failed.");
+    }
+  };
+
+  const playAudio = async (uri, name) => {
+    try {
+      if (soundObjects[name]) {
+        await soundObjects[name].stopAsync();
+        await soundObjects[name].unloadAsync();
+      }
+      const sound = new Audio.Sound();
+      await sound.loadAsync({ uri });
+      await sound.playAsync();
+      setSoundObjects((prev) => ({ ...prev, [name]: sound }));
+    } catch (err) {
+      console.error(err);
+      Alert.alert("Error", "Failed to play audio.");
+    }
+  };
+
+  const sendToContactSMS = async (item) => {
+    const phoneNumbers = contacts.map((c) => c.phone);
+    const isAvailable = await SMS.isAvailableAsync();
+    if (!isAvailable) {
+      Alert.alert("Error", "SMS not available on this device.");
+      return;
+    }
+    try {
+      await SMS.sendSMSAsync(
+        phoneNumbers,
+        `Evidence: ${item.name}\n${item.uri}`
+      );
+      Alert.alert("Sent", `${item.name} sent via SMS.`);
+    } catch (err) {
+      console.error(err);
       Alert.alert("Error", "Failed to send SMS.");
     }
   };
 
-  const openFullScreen = (item) => setSelectedMedia(item);
-  const closeFullScreen = () => setSelectedMedia(null);
-
-  // Create thumbnail players for grid (these don't autoplay)
-  const ThumbnailVideo = ({ source }) => {
-    const player = useVideoPlayer(source, (player) => {
-      // Don't autoplay thumbnails
-      player.pause();
-    });
-
-    return (
-      <VideoView
-        player={player}
-        style={styles.mediaInner}
-        nativeControls={false}
-      />
-    );
-  };
-
   return (
     <LinearGradient colors={["#521684", "#1c052f"]} style={styles.container}>
-      {/* Sticky Header */}
       <View style={styles.stickyBar}>
         <Text style={styles.title}>Secure Evidence Locker</Text>
         <View style={styles.buttonRow}>
           <TouchableOpacity style={styles.button} onPress={handleImport}>
             <Text style={styles.buttonText}>Import</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={handleExport}>
-            <Text style={styles.buttonText}>Export</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={recording ? stopAudioRecording : startAudioRecording}
+          >
+            <Text style={styles.buttonText}>
+              {recording ? "Stop Audio" : "Record Audio"}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.button} onPress={startVideoRecording}>
+            <Text style={styles.buttonText}>Record Video</Text>
           </TouchableOpacity>
         </View>
       </View>
 
-      {/* Scrollable grid */}
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.grid}>
           {mediaItems.map((item, idx) => (
-            <View key={idx} style={{ alignItems: "center", width: "30%", marginRight: (idx % 3 === 2) ? 0 : 12 }}>
+            <View key={idx} style={{ width: "45%", margin: 5 }}>
               <Text style={styles.fileLabel}>{item.name}</Text>
+              {item.type === "image" ? (
+                <Image source={{ uri: item.uri }} style={styles.mediaInner} />
+              ) : item.type === "video" ? (
+                <Video
+                  source={{ uri: item.uri }}
+                  style={styles.mediaInner}
+                  useNativeControls
+                  resizeMode="contain"
+                  isLooping
+                />
+              ) : (
+                <TouchableOpacity
+                  style={styles.audioBox}
+                  onPress={() => playAudio(item.uri, item.name)}
+                >
+                  <Text style={{ color: "#fff", textAlign: "center" }}>
+                    Play Audio
+                  </Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
-                style={styles.mediaBox}
-                activeOpacity={0.9}
-                onPress={() => openFullScreen(item)}
+                style={styles.sendButton}
+                onPress={() => sendToContactSMS(item)}
               >
-                {item.type === "video" ? (
-                  <ThumbnailVideo
-                    source={typeof item.uri === "string" ? item.uri : item.uri}
-                  />
-                ) : (
-                  <Image
-                    source={typeof item.uri === "string" ? { uri: item.uri } : item.uri}
-                    style={styles.mediaInner}
-                  />
-                )}
+                <Text style={{ color: "#fff", textAlign: "center" }}>
+                  Send via SMS
+                </Text>
               </TouchableOpacity>
             </View>
           ))}
         </View>
       </ScrollView>
-
-      {/* Fullscreen overlay */}
-      {selectedMedia && (
-        <View style={styles.fullscreenOverlay}>
-          {/* Back button */}
-          <TouchableOpacity style={styles.backButton} onPress={closeFullScreen}>
-            <Text style={styles.backButtonText}>Back</Text>
-          </TouchableOpacity>
-
-          <View style={styles.fullscreenInner}>
-            {selectedMedia.type === "video" ? (
-              <VideoView
-                player={fullscreenPlayer}
-                style={styles.fullscreenMedia}
-                nativeControls={true}
-                contentFit="contain"
-              />
-            ) : (
-              <Image
-                source={
-                  typeof selectedMedia.uri === "string"
-                    ? { uri: selectedMedia.uri }
-                    : selectedMedia.uri
-                }
-                style={styles.fullscreenMedia}
-                resizeMode="contain"
-              />
-            )}
-          </View>
-        </View>
-      )}
     </LinearGradient>
   );
 }
@@ -199,98 +249,37 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   stickyBar: {
     marginTop: 48,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
+    padding: 12,
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#fff",
-  },
-  buttonRow: {
-    flexDirection: "row",
-    marginTop: 10,
-  },
+  title: { fontSize: 32, fontWeight: "bold", color: "#fff" },
+  buttonRow: { flexDirection: "row", marginTop: 10 },
   button: {
     backgroundColor: "#652a9c",
     borderRadius: 25,
     paddingVertical: 12,
-    alignItems: "center",
-    marginTop: 10,
-    marginHorizontal: 8,
     paddingHorizontal: 16,
+    marginHorizontal: 5,
   },
-  buttonText: {
-    color: "#e0c8c4",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  scrollContent: {
-    padding: 16,
-    paddingBottom: 80,
-  },
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "flex-start",
-  },
-  fileLabel: {
-    color: "#fff",
-    marginBottom: 4,
-    fontSize: 14,
-    fontWeight: "500",
-  },
-  mediaBox: {
+  buttonText: { color: "#e0c8c4", fontWeight: "600" },
+  scrollContent: { padding: 16, paddingBottom: 80 },
+  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  fileLabel: { color: "#fff", marginBottom: 4, fontSize: 14 },
+  mediaInner: { width: "100%", height: 120, borderRadius: 8, backgroundColor: "#222" },
+  audioBox: {
     width: "100%",
-    height: 120,
-    backgroundColor: "#222",
-    marginBottom: 12,
+    height: 50,
+    backgroundColor: "#333",
     borderRadius: 8,
-    overflow: "hidden",
-    marginRight: "3.33%",
-  },
-  mediaInner: {
-    width: "100%",
-    height: "100%",
-  },
-  fullscreenOverlay: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "black",
     justifyContent: "center",
-    alignItems: "center",
-    zIndex: 999,
+    marginBottom: 10,
   },
-  backButton: {
-    position: "absolute",
-    top: 40,
-    left: 20,
-    backgroundColor: "#652a9c",
-    borderRadius: 20,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    marginBottom: 20,
-    zIndex: 1000,
-  },
-  backButtonText: {
-    color: "#e0c8c4",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  fullscreenInner: {
-    width: "100%",
-    height: "100%",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  fullscreenMedia: {
-    width: "100%",
-    height: "100%",
+  sendButton: {
+    backgroundColor: "#4CAF50",
+    borderRadius: 8,
+    paddingVertical: 6,
+    marginTop: 4,
   },
 });

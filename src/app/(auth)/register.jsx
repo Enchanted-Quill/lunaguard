@@ -13,7 +13,6 @@ import {
   Alert
 } from 'react-native';
 
-
 import auth from '@react-native-firebase/auth';
 import { useState } from 'react';
 import { router } from 'expo-router';
@@ -31,22 +30,29 @@ const SignUp = () => {
         email.trim(),
         password.trim()
       );
-      if (userCredential) router.replace('/home');
+      if (userCredential) router.replace('/onboarding1');
     } catch (error) {
       console.error("Registration error:", error.code, error.message);
       Alert.alert('Sign up failed: ' + error.message);
     }
   };
 
-  const handleGoogleRegister = async () => {
-      try {
-        await signInWithGoogle();
-        Alert.alert('Success', 'Google sign-up successful!');
-        router.replace('/home');
-      } catch (error) {
-        Alert.alert('Error', 'Google sign-up failed. Please try again.');
-      }
-    };
+
+const handleGoogleRegister = async () => {
+  try {
+    const { isNewUser } = await signInWithGoogle();
+    router.replace('/onboarding1');
+  } catch (error) {
+    console.error('Google sign-up error:', error);
+    Alert.alert(
+      'Error', 
+      error?.message || 'Google sign-up failed. Please try again.'
+    );
+  }
+};
+
+
+
 
   return (
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
