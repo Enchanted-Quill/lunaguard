@@ -1,33 +1,50 @@
 // context/UserContext.js
-import React, { createContext, useState, useContext, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import auth from '@react-native-firebase/auth';
+import firestore from '@react-native-firebase/firestore';
+import storage from '@react-native-firebase/storage';
 
 const UserContext = createContext();
 
+export const useUser = () => {
+  const context = useContext(UserContext);
+  if (!context) throw new Error('useUser must be used within a UserProvider');
+  return context;
+};
+
 export const UserProvider = ({ children }) => {
-  // User profile state
-  const [username, setUsername] = useState("soggydollar");
-  const [name, setName] = useState("Sarah");
-  const [email, setEmail] = useState("sarah@gmail.com");
-  const [phone, setPhone] = useState("0123456789");
-  const [profilePic, setProfilePic] = useState(null);
-
-  // Emergency contacts state
-  const [contacts, setContacts] = useState([
-    { name: "Contact 1", email: "a@gmail.com", phone: "0123456789" },
-  ]);
-
-  // Shortcuts state
-  const [shortcuts, setShortcuts] = useState({
-    shortcut1: "SOS",
-    shortcut2: "Fake Call",
+  // --- User Profile ---
+  const [userProfile, setUserProfile] = useState({
+    name: '',
+    phone: '',
+    username: '',
+    profilePic: null,
   });
 
-  // Danger radius state for map
-  const [dangerRadius, setDangerRadius] = useState(1);
+  // --- Permissions ---
+  const [permissions, setPermissions] = useState({
+    camera: false,
+    contacts: false,
+    location: false,
+    notifications: false,
+  });
 
-  // Incidents state for map
+  // --- Shortcuts ---
+  const [shortcuts, setShortcuts] = useState({
+    sos: 'Press 3 times',
+    fakeCall: 'Shake phone',
+    emergency: 'Hold volume down',
+  });
+
+  // --- Emergency Contacts ---
+  const [emergencyContacts, setEmergencyContacts] = useState([
+    { name: '', phone: '' },
+    { name: '', phone: '' },
+    { name: '', phone: '' },
+  ]);
+
+  // --- Incidents ---
   const [incidents, setIncidents] = useState([
-    // Example incident for testing
     {
       id: '1',
       title: 'Suspicious Activity',
@@ -35,8 +52,10 @@ export const UserProvider = ({ children }) => {
       time: new Date().toISOString(),
       description: 'Person following individuals in parking lot',
       reportedBy: 'soggydollar',
-    }
+    },
   ]);
+
+  const [dangerRadius, setDangerRadius] = useState(1);
 
   // Clean up old incidents
   useEffect(() => {
@@ -44,42 +63,108 @@ export const UserProvider = ({ children }) => {
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      setIncidents(prevIncidents =>
-        prevIncidents.filter(incident =>
-          new Date(incident.time) >= thirtyDaysAgo
-        )
+      setIncidents(prev =>
+        prev.filter(incident => new Date(incident.time) >= thirtyDaysAgo)
       );
-    }, 24 * 60 * 60 * 1000); // Check once per day
+    }, 24 * 60 * 60 * 1000);
 
     return () => clearInterval(cleanupInterval);
   }, []);
 
-  // Function to update profile
-  const updateProfile = (profileData) => {
-    if (profileData.username !== undefined) setUsername(profileData.username);
-    if (profileData.name !== undefined) setName(profileData.name);
-    if (profileData.email !== undefined) setEmail(profileData.email);
-    if (profileData.phone !== undefined) setPhone(profileData.phone);
-    if (profileData.profilePic !== undefined) setProfilePic(profileData.profilePic);
+  // --- Load user data on app start ---
+  useEffect(() => {
+    const loadUserData = async () => {
+      const user = auth().currentUser;
+      if (!user) return;
+
+      const userRef = firestore().collection('users').doc(user.uid);
+      const docSnap = await userRef.get();
+
+      if (docSnap.exists) {
+        const data = docSnap.data();
+        if (data.userProfile) setUserProfile(data.userProfile);
+        if (data.permissions) setPermissions(data.permissions);
+        if (data.shortcuts) setShortcuts(data.shortcuts);
+        if (data.emergencyContacts) setEmergencyContacts(data.emergencyContacts);
+      } else {
+        // Create default Firestore doc if it doesn't exist
+        await userRef.set({
+          userProfile,
+          permissions,
+          shortcuts,
+          emergencyContacts,
+        });
+      }
+    };
+
+    loadUserData();
+  }, []);
+
+  // --- Profile Functions ---
+  const updateProfile = async updates => {
+    setUserProfile(prev => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ userProfile: { ...userProfile, ...updates } }, { merge: true });
   };
 
-  // Function to add contact
-  const addContact = (contact) => {
-    setContacts([...contacts, contact]);
+  const uploadProfilePic = async localUri => {
+    if (!localUri) return null;
+    const user = auth().currentUser;
+    if (!user) return null;
+
+    try {
+      const fileName = localUri.split('/').pop();
+      const storageRef = storage().ref(`profilePics/${user.uid}/${fileName}`);
+      await storageRef.putFile(localUri);
+      const downloadURL = await storageRef.getDownloadURL();
+      await updateProfile({ profilePic: downloadURL });
+      return downloadURL;
+    } catch (err) {
+      console.error('Firebase Storage upload error:', err);
+      return null;
+    }
   };
 
-  // Function to update contacts
-  const updateContacts = (newContacts) => {
-    setContacts(newContacts);
+  // --- Permissions Functions ---
+  const updatePermissions = async updates => {
+    setPermissions(prev => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ permissions: { ...permissions, ...updates } }, { merge: true });
   };
 
-  // Function to update shortcuts
-  const updateShortcuts = (newShortcuts) => {
-    setShortcuts(newShortcuts);
+  // --- Shortcuts Functions ---
+  const updateShortcuts = async updates => {
+    setShortcuts(prev => ({ ...prev, ...updates }));
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore()
+      .collection('users')
+      .doc(user.uid)
+      .set({ shortcuts: { ...shortcuts, ...updates } }, { merge: true });
   };
 
-  // Function to add incident
+  // --- Emergency Contacts Functions ---
+  const updateEmergencyContacts = async contacts => {
+    setEmergencyContacts(contacts);
+    const user = auth().currentUser;
+    if (!user) return;
+    await firestore().collection('users').doc(user.uid).set(
+      { emergencyContacts: contacts },
+      { merge: true }
+    );
+  };
+
+    // Function to add incident
   const addIncident = (incident) => {
+    const { username } = userProfile;
     const newIncident = {
       ...incident,
       id: Date.now().toString(),
@@ -94,60 +179,43 @@ export const UserProvider = ({ children }) => {
     setIncidents(newIncidents);
   };
 
-  // Function to upvote/downvote incidents in map
+  // --- Incidents Functions ---
+
   const voteOnIncident = (incidentId, voteType, voterUsername) => {
-    setIncidents(prevIncidents => {
-      const updatedIncidents = prevIncidents.map(incident => {
-        if (incident.id !== incidentId) return incident;
+    setIncidents(prev =>
+      prev
+        .map(incident => {
+          if (incident.id !== incidentId) return incident;
 
-        const upvotes = incident.upvotes || [];
-        const downvotes = incident.downvotes || [];
+          const upvotes = incident.upvotes || [];
+          const downvotes = incident.downvotes || [];
 
-        // Remove from both arrays first
-        const newUpvotes = upvotes.filter(u => u !== voterUsername);
-        const newDownvotes = downvotes.filter(u => u !== voterUsername);
+          const newUpvotes = upvotes.filter(u => u !== voterUsername);
+          const newDownvotes = downvotes.filter(u => u !== voterUsername);
 
-        // Add to appropriate array
-        if (voteType === 'upvote') {
-          newUpvotes.push(voterUsername);
-        } else if (voteType === 'downvote') {
-          newDownvotes.push(voterUsername);
-        }
+          if (voteType === 'upvote') newUpvotes.push(voterUsername);
+          else newDownvotes.push(voterUsername);
 
-        return {
-          ...incident,
-          upvotes: newUpvotes,
-          downvotes: newDownvotes,
-        };
-      });
-
-      // Filter out incidents with >20 downvotes and >90% downvote ratio
-      return updatedIncidents.filter(incident => {
-        const upvoteCount = incident.upvotes?.length || 0;
-        const downvoteCount = incident.downvotes?.length || 0;
-        const totalVotes = upvoteCount + downvoteCount;
-
-        // Keep incident if it doesn't meet removal criteria
-        if (downvoteCount <= 20) return true;
-        if (totalVotes === 0) return true;
-
-        const downvoteRatio = downvoteCount / totalVotes;
-        return downvoteRatio <= 0.9; // Remove if ratio > 90%
-      });
-    });
-  };
-
-  // Function to delete one's own incidents
-  const deleteIncident = (incidentId) => {
-    setIncidents(prevIncidents =>
-      prevIncidents.filter(incident => incident.id !== incidentId)
+          return { ...incident, upvotes: newUpvotes, downvotes: newDownvotes };
+        })
+        .filter(incident => {
+          const upvoteCount = incident.upvotes?.length || 0;
+          const downvoteCount = incident.downvotes?.length || 0;
+          const totalVotes = upvoteCount + downvoteCount;
+          if (downvoteCount <= 20) return true;
+          if (totalVotes === 0) return true;
+          return downvoteCount / totalVotes <= 0.9;
+        })
     );
   };
 
-  // Function to edit one's own incidents
+  const deleteIncident = incidentId => {
+    setIncidents(prev => prev.filter(incident => incident.id !== incidentId));
+  };
+
   const updateIncident = (incidentId, updates) => {
-    setIncidents(prevIncidents =>
-      prevIncidents.map(incident =>
+    setIncidents(prev =>
+      prev.map(incident =>
         incident.id === incidentId
           ? { ...incident, ...updates, editedAt: new Date().toISOString() }
           : incident
@@ -156,46 +224,24 @@ export const UserProvider = ({ children }) => {
   };
 
   const value = {
-    // Profile data
-    username,
-    name,
-    email,
-    phone,
-    profilePic,
-    // Contacts
-    contacts,
-    // Shortcuts
+    userProfile,
+    updateProfile,
+    uploadProfilePic,
+    permissions,
+    updatePermissions,
     shortcuts,
-    // Danger radius
-    dangerRadius,
-    setDangerRadius,
-    // Incidents
+    updateShortcuts,
+    emergencyContacts,
+    updateEmergencyContacts,
     incidents,
+    addIncident,
+    updateIncidents,
     voteOnIncident,
     deleteIncident,
     updateIncident,
-    // Update functions
-    updateProfile,
-    addContact,
-    updateContacts,
-    updateShortcuts,
-    addIncident,
-    updateIncidents,
-    setUsername,
-    setName,
-    setEmail,
-    setPhone,
-    setProfilePic,
+    dangerRadius,
+    setDangerRadius,
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;
-};
-
-// Custom hook to use the context
-export const useUser = () => {
-  const context = useContext(UserContext);
-  if (!context) {
-    throw new Error('useUser must be used within a UserProvider');
-  }
-  return context;
 };
