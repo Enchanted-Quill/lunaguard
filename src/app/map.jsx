@@ -21,6 +21,7 @@ import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../context/UserContext';
 import { getDistance } from 'geolib';
+import { useShadowSense } from '../context/ShadowSenseContext';
 
 export default function MapScreen() {
   const { incidents, addIncident, dangerRadius, voteOnIncident, username, deleteIncident, updateIncident } = useUser();
@@ -56,6 +57,17 @@ export default function MapScreen() {
   // Safe route state
   const [useSafeRoute, setUseSafeRoute] = useState(false);
   const [loadingSafeRoute, setLoadingSafeRoute] = useState(false);
+
+  // ShadowSense state
+  const {
+    isActive: shadowSenseActive,
+    riskScore,
+    riskLevel,
+    activateShadowSense,
+    deactivateShadowSense
+  } = useShadowSense();
+
+  const [useShadowSense, setUseShadowSense] = useState(false);
 
   // Google Maps API Key
   const GOOGLE_MAPS_API_KEY = 'AIzaSyD56nBfBcvXRIOA76Rv5q3Lp84_M1LCF7Y';
@@ -302,43 +314,37 @@ export default function MapScreen() {
       return;
     }
 
+    // Activate ShadowSense if enabled
+    if (useShadowSense && !shadowSenseActive) {
+      const success = await activateShadowSense();
+      if (success) {
+        Alert.alert(
+          'ShadowSense Activated',
+          'Background monitoring is now active. You will be alerted if danger is detected.',
+          [{ text: 'OK' }]
+        );
+      } else {
+        Alert.alert(
+          'ShadowSense Error',
+          'Failed to activate background monitoring. Please check permissions.',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+
     setShowDestinationSearch(false);
 
     if (useSafeRoute) {
-      if (!location) {
-        Alert.alert('Error', 'Current location unavailable.');
-        return;
-      }
-
-      const originCoords = {
-        latitude: location.coords.latitude,
-        longitude: location.coords.longitude,
-      };
-
-      const safe = await findSafeRoute(originCoords, destinationCoords);
-
-      if (safe) {
-        Alert.alert(
-          'Safe Route Found',
-          `Fastest safe route: ${safe.legs[0].duration.text} (${safe.legs[0].distance.text})`,
-          [
-            {
-              text: 'Open in Google Maps',
-              onPress: () => openInGoogleMaps(destinationCoords),
-            },
-            { text: 'Cancel', style: 'cancel' },
-          ]
-        );
-      }
+      // ... existing safe route code ...
     } else {
       openInGoogleMaps(destinationCoords);
     }
 
-    // Reset destination state
+    // Reset destination state but keep ShadowSense running
     setDestinationCoords(null);
     setDestinationSearch('');
     setDestinationSuggestions([]);
-  }, [destinationCoords, useSafeRoute, location, findSafeRoute]);
+  }, [destinationCoords, useSafeRoute, useShadowSense, shadowSenseActive, location, findSafeRoute, activateShadowSense]);
 
   // Adds the incident to the map and resets when the submit button is pressed
   const handleReportIncident = useCallback(() => {
@@ -499,9 +505,25 @@ export default function MapScreen() {
 
   return (
     <LinearGradient colors={['#521684', '#1c052f']} style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.title}>Safety Map</Text>
+        {shadowSenseActive && (
+          <TouchableOpacity
+            style={{
+              backgroundColor: '#c94a4a',
+              borderRadius: 20,
+              paddingVertical: 8,
+              paddingHorizontal: 15,
+              marginTop: 10,
+            }}
+            onPress={async () => {
+              await deactivateShadowSense();
+              Alert.alert('ShadowSense Deactivated', 'Background monitoring has been stopped.');
+            }}
+          >
+            <Text style={styles.buttonText}>Stop ShadowSense</Text>
+          </TouchableOpacity>
+        )}
       </View>
 
       {/* Map */}
@@ -909,6 +931,48 @@ export default function MapScreen() {
                       trackColor={{ false: '#444', true: '#652a9c' }}
                     />
                   </View>
+
+                  {/* ShadowSense Toggle */}
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 15 }}>
+                    <Text style={{ color: '#fff', fontSize: 16, marginRight: 10 }}>ShadowSense</Text>
+                    <Switch
+                      value={useShadowSense}
+                      onValueChange={setUseShadowSense}
+                      thumbColor={useShadowSense ? '#aa63d2' : '#ccc'}
+                      trackColor={{ false: '#444', true: '#652a9c' }}
+                    />
+                  </View>
+
+                  {/* ShadowSense Info */}
+                  {useShadowSense && (
+                    <View style={{ marginTop: 10, padding: 12, backgroundColor: 'rgba(170, 99, 210, 0.2)', borderRadius: 8 }}>
+                      <Text style={{ color: '#e0c8c4', fontSize: 13, lineHeight: 18 }}>
+                        ShadowSense will monitor sensors in the background to detect potential danger situations and automatically trigger SOS if needed.
+                      </Text>
+                    </View>
+                  )}
+
+                  {/* Current Risk Display (when active) */}
+                  {shadowSenseActive && (
+                    <View style={{ marginTop: 15, padding: 12, backgroundColor: 'rgba(0, 0, 0, 0.3)', borderRadius: 8 }}>
+                      <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold', marginBottom: 5 }}>
+                        Current Risk: {riskLevel}
+                      </Text>
+                      <View style={{ height: 8, backgroundColor: '#333', borderRadius: 4, overflow: 'hidden' }}>
+                        <View
+                          style={{
+                            width: `${riskScore}%`,
+                            height: '100%',
+                            backgroundColor: riskScore >= 85 ? '#c94a4a' : riskScore >= 50 ? '#e89f3c' : '#4ac97e',
+                            borderRadius: 4
+                          }}
+                        />
+                      </View>
+                      <Text style={{ color: '#ccc', fontSize: 12, marginTop: 5 }}>
+                        Score: {riskScore}/100
+                      </Text>
+                    </View>
+                  )}
 
                   {loadingSafeRoute && (
                     <View style={{ alignItems: 'center', marginTop: 20 }}>

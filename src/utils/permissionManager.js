@@ -235,6 +235,11 @@ class PermissionManager {
     Alert.alert(
       'Permission Status',
       `${locationIcon} Location\n${cameraIcon} Camera\n${microphoneIcon} Microphone\n${smsIcon} SMS`,
+      [
+        { text: 'OK', style: 'cancel' },
+        ...(status.allGranted ? [] : [{ text: 'Settings', onPress: () => this.openSettings() }]),
+      ]
+    );
   }
 }
 
