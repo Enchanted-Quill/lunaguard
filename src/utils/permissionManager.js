@@ -40,7 +40,8 @@ class PermissionManager {
       const smsResult = await this.requestSMSPermission();
       results.sms = smsResult;
 
-      results.allGranted = results.location && results.camera && results.microphone && results.sms;
+      results.allGranted =
+        results.location && results.camera && results.microphone && results.sms;
 
       return results;
     } catch (error) {
@@ -52,7 +53,8 @@ class PermissionManager {
   // Request location permission
   async requestLocationPermission() {
     try {
-      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      const { status: foregroundStatus } =
+        await Location.requestForegroundPermissionsAsync();
 
       if (foregroundStatus !== 'granted') {
         Alert.alert(
@@ -68,7 +70,8 @@ class PermissionManager {
 
       // Request background permission for Android
       if (Platform.OS === 'android') {
-        const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+        const { status: backgroundStatus } =
+          await Location.requestBackgroundPermissionsAsync();
         if (backgroundStatus !== 'granted') {
           Alert.alert(
             'Background Location',
@@ -86,12 +89,12 @@ class PermissionManager {
     }
   }
 
-  // Request camera permission
+  // ✅ Request camera permission (updated for expo-vision-camera)
   async requestCameraPermission() {
     try {
-      const { status } = await Camera.requestCameraPermissionsAsync();
+      const cameraPermission = await Camera.requestCameraPermission();
 
-      if (status !== 'granted') {
+      if (cameraPermission !== 'authorized') {
         Alert.alert(
           'Camera Permission Required',
           'LunaGuard needs camera access to record video during emergencies.',
@@ -148,7 +151,8 @@ class PermissionManager {
         PermissionsAndroid.PERMISSIONS.SEND_SMS,
         {
           title: 'SMS Permission Required',
-          message: 'LunaGuard needs SMS permission to alert your emergency contacts during emergencies.',
+          message:
+            'LunaGuard needs SMS permission to alert your emergency contacts during emergencies.',
           buttonNeutral: 'Ask Me Later',
           buttonNegative: 'Cancel',
           buttonPositive: 'OK',
@@ -174,22 +178,24 @@ class PermissionManager {
     }
   }
 
-  // Check if all permissions are granted
+  // ✅ Check if all permissions are granted (updated for expo-vision-camera)
   async checkAllPermissions() {
     try {
       const locationStatus = await Location.getForegroundPermissionsAsync();
-      const cameraStatus = await Camera.getCameraPermissionsAsync();
+      const cameraPermission = await Camera.getCameraPermissionStatus();
       const audioStatus = await Audio.getPermissionsAsync();
 
       this.permissions.location = locationStatus.status === 'granted';
-      this.permissions.camera = cameraStatus.status === 'granted';
+      this.permissions.camera = cameraPermission === 'authorized';
       this.permissions.microphone = audioStatus.status === 'granted';
 
       // Check SMS permission on Android
       let smsGranted = true;
       if (Platform.OS === 'android') {
         const { PermissionsAndroid } = require('react-native');
-        const smsStatus = await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+        const smsStatus = await PermissionsAndroid.check(
+          PermissionsAndroid.PERMISSIONS.SEND_SMS
+        );
         smsGranted = smsStatus;
       }
 
@@ -198,10 +204,11 @@ class PermissionManager {
         camera: this.permissions.camera,
         microphone: this.permissions.microphone,
         sms: smsGranted,
-        allGranted: this.permissions.location &&
-                    this.permissions.camera &&
-                    this.permissions.microphone &&
-                    smsGranted,
+        allGranted:
+          this.permissions.location &&
+          this.permissions.camera &&
+          this.permissions.microphone &&
+          smsGranted,
       };
     } catch (error) {
       console.error('Error checking permissions:', error);

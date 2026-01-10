@@ -150,7 +150,7 @@ export default function HomeScreen() {
           activeOpacity={0.5}
           onPress={() => router.push("/chat")}
         >
-          <Text style={styles.buttonText}>Empowerment Circles</Text>
+          <Text style={styles.buttonText}>Self Defense Learning</Text>
         </TouchableOpacity>
 
         {/* Evidence Locker Button */}
