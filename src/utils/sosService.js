@@ -1,51 +1,36 @@
 // utils/sosService.js
-/**
- * SOSService
- * - Records audio in short chunks (CHUNK_DURATION ms)
- * - Saves chunks locally, uploads to Firebase Storage, writes metadata to Firestore
- * - Sends an initial SMS to emergency contacts with a viewer link
- * - Keeps a resilient upload queue that retries when network returns
- *
- * Notes:
- * - For foreground video recording use react-native-vision-camera in a component;
- *   capture short files and call sosService.queueUpload(...) to upload them.
- * - Audio chunking + upload is much more reliable and is implemented here.
- */
-
 import * as Location from 'expo-location';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from 'expo-av';
 import NetInfo from '@react-native-community/netinfo';
 import firestore from '@react-native-firebase/firestore';
 import storage from '@react-native-firebase/storage';
-import SendSMS from 'react-native-sms';
+import auth from '@react-native-firebase/auth';
+import { NativeModules, Platform, PermissionsAndroid } from 'react-native';
 
-const CHUNK_DURATION = 8000; // ms (8 seconds)
+const CHUNK_DURATION = 8000;
 const MAX_UPLOAD_RETRIES = 5;
-const UPLOAD_CONCURRENCY = 1; // one at a time to preserve order
+const UPLOAD_CONCURRENCY = 1;
 
 class SOSService {
   constructor() {
     this.sessionId = null;
     this.isActive = false;
     this.chunkIndex = 0;
-    this.uploadQueue = []; // { sessionId, chunkIndex, localUri, mode, attempts }
+    this.uploadQueue = [];
     this.processingUploads = false;
     this.isOnline = true;
     this.locationInterval = null;
-    this.recordingMode = 'audio'; // 'audio' | 'video' (video handled in UI)
+    this.recordingMode = 'audio';
     this.recordingInstance = null;
+    this.userId = null;
 
-    // Watch network
     this.netUnsub = NetInfo.addEventListener(state => {
       this.isOnline = !!(state.isConnected && state.isInternetReachable);
       if (this.isOnline) this._processUploadQueue().catch(e => console.error(e));
     });
   }
 
-  // -------------------------
-  // Utilities
-  // -------------------------
   _generateSessionId() {
     return `${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
   }
@@ -54,16 +39,122 @@ class SOSService {
     return new Promise(res => setTimeout(res, ms));
   }
 
-  // -------------------------
-  // Public API
-  // -------------------------
   /**
-   * startSOS(username, contacts)
-   * - username (string)
-   * - contacts: [{ name, phone }, ...]
-   *
-   * Returns: { sessionId, viewerLink } on success
+   * Request SMS permission on Android
    */
+  async _requestSMSPermission() {
+    if (Platform.OS !== 'android') {
+      return true; // iOS doesn't support automatic SMS sending
+    }
+
+    try {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.SEND_SMS,
+        {
+          title: 'SMS Permission',
+          message: 'LunaGuard needs SMS permission to send emergency alerts to your contacts',
+          buttonNeutral: 'Ask Me Later',
+          buttonNegative: 'Cancel',
+          buttonPositive: 'OK',
+        }
+      );
+
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } catch (err) {
+      console.warn('SMS permission error:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Send SMS automatically using native Android SmsManager
+   * This only works on Android with SEND_SMS permission
+   */
+  async _sendAutomaticSMS(phoneNumbers, message) {
+    if (Platform.OS !== 'android') {
+      console.warn('Automatic SMS sending is only supported on Android');
+      return [];
+    }
+
+    try {
+      // Request permission first
+      const hasPermission = await this._requestSMSPermission();
+      if (!hasPermission) {
+        console.warn('SMS permission denied');
+        return phoneNumbers.map(phone => ({ success: false, phone, error: 'Permission denied' }));
+      }
+
+      // Use native SmsManager
+      const { SmsManager } = NativeModules;
+
+      // If module doesn't exist, create it
+      if (!SmsManager) {
+        console.warn('SmsManager module not found, attempting direct send...');
+        return await this._sendSMSDirect(phoneNumbers, message);
+      }
+
+      const results = [];
+
+      for (const phone of phoneNumbers) {
+        try {
+          await SmsManager.sendTextMessage(phone, null, message, null, null);
+          console.log(`✅ SMS sent to ${phone}`);
+          results.push({ success: true, phone });
+        } catch (error) {
+          console.error(`❌ SMS failed to ${phone}:`, error);
+          results.push({ success: false, phone, error: error.message });
+        }
+      }
+
+      return results;
+    } catch (error) {
+      console.error('Automatic SMS error:', error);
+      return phoneNumbers.map(phone => ({ success: false, phone, error: error.message }));
+    }
+  }
+
+  /**
+   * Fallback method using React Native's direct SMS API
+   */
+  async _sendSMSDirect(phoneNumbers, message) {
+    const results = [];
+
+    for (const phone of phoneNumbers) {
+      try {
+        // Use React Native's Linking API as fallback
+        // This will open SMS app but with pre-filled content
+        const { Linking } = require('react-native');
+
+        // For Android, we can try using SMS intent
+        if (Platform.OS === 'android') {
+          const smsUrl = `sms:${phone}?body=${encodeURIComponent(message)}`;
+          const canOpen = await Linking.canOpenURL(smsUrl);
+
+          if (canOpen) {
+            // Note: This opens the SMS app, doesn't send automatically
+            // await Linking.openURL(smsUrl);
+
+            // Instead, try using expo-sms for better control
+            const SMS = require('expo-sms');
+            const isAvailable = await SMS.isAvailableAsync();
+
+            if (isAvailable) {
+              // This will still require user tap, but it's the best we can do
+              // without native module
+              console.warn(`SMS app opened for ${phone} - requires user confirmation`);
+              results.push({ success: false, phone, error: 'Requires user confirmation' });
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`SMS fallback error for ${phone}:`, error);
+        results.push({ success: false, phone, error: error.message });
+      }
+    }
+
+    return results;
+  }
+
   async startSOS(username = 'Unknown', contacts = []) {
     if (this.isActive) {
       console.warn('SOS already active');
@@ -74,9 +165,10 @@ class SOSService {
     this.sessionId = this._generateSessionId();
     this.chunkIndex = 0;
     this.uploadQueue = [];
+    this.userId = auth().currentUser?.uid;
 
     try {
-      // Request minimal permissions (location, audio)
+      // Request permissions
       try {
         const loc = await Location.requestForegroundPermissionsAsync();
         if (loc.status !== 'granted') {
@@ -87,7 +179,6 @@ class SOSService {
       }
 
       try {
-        // expo-av uses Audio.requestPermissionsAsync in newer versions
         if (Audio && Audio.requestPermissionsAsync) {
           await Audio.requestPermissionsAsync();
         }
@@ -95,12 +186,13 @@ class SOSService {
         console.warn('Audio permission request failed', e);
       }
 
-      // Get initial location (may be null)
+      // Get initial location
       const initialLocation = await this._getCurrentLocation();
 
       // Create Firestore session doc
       await firestore().collection('sos-sessions').doc(this.sessionId).set({
         username,
+        userId: this.userId,
         startTime: firestore.FieldValue.serverTimestamp(),
         status: 'active',
         initialLocation: initialLocation ? {
@@ -111,38 +203,48 @@ class SOSService {
         recordingMode: this.recordingMode,
       });
 
-      // Build a viewer link (you'll need to provide the viewer page on your web host)
-      const viewerLink = `https://your-viewer.example.com/sos?session=${this.sessionId}`;
+      // Build viewer link
+      const viewerLink = `https://lunaguard-304d3.web.app/sos-viewer.html?session=${this.sessionId}`;
 
-      // Notify emergency contacts via SMS (best-effort)
+      // 🚨 AUTOMATIC SMS SENDING (ANDROID ONLY)
       try {
         const phoneNumbers = contacts.map(c => c.phone).filter(Boolean);
-        if (phoneNumbers.length) {
+        if (phoneNumbers.length > 0) {
           const locationText = initialLocation
             ? `\nLocation: https://maps.google.com/?q=${initialLocation.coords.latitude},${initialLocation.coords.longitude}`
             : '';
 
           const message = `🚨 EMERGENCY from ${username}${locationText}\nLive: ${viewerLink}\n(Automatic alert from LunaGuard)`;
 
-          // Using react-native-sms (will open native SMS UI on some platforms)
-          SendSMS.send({
-            body: message,
-            recipients: phoneNumbers,
-            successTypes: ['sent', 'queued'],
-            allowAndroidSendWithoutReadPermission: true,
-          }, (completed, cancelled, error) => {
-            if (error) console.warn('SMS send error', error);
-            // We don't fail the SOS if SMS fails
+          console.log('📱 Sending automatic SMS alerts...');
+          const smsResults = await this._sendAutomaticSMS(phoneNumbers, message);
+
+          // Log SMS results to Firestore
+          await firestore().collection('sos-sessions').doc(this.sessionId).update({
+            smsAlerts: {
+              sent: smsResults.filter(r => r.success).map(r => r.phone),
+              failed: smsResults.filter(r => !r.success).map(r => ({ phone: r.phone, error: r.error })),
+              timestamp: firestore.FieldValue.serverTimestamp(),
+              platform: Platform.OS
+            }
           });
+
+          const successCount = smsResults.filter(r => r.success).length;
+          if (successCount > 0) {
+            console.log(`✅ ${successCount}/${phoneNumbers.length} SMS sent successfully`);
+          } else {
+            console.warn('⚠️ No SMS sent automatically (may require manual confirmation)');
+          }
         }
       } catch (smsErr) {
-        console.warn('SMS notify error', smsErr);
+        console.warn('Automatic SMS error (non-fatal):', smsErr);
+        // Don't fail SOS if SMS fails
       }
 
-      // Start location updates loop (30s)
+      // Start location updates
       this._startLocationUpdates();
 
-      // Start audio chunk recorder loop
+      // Start audio chunk recorder
       await this._startAudioChunkLoop();
 
       return { sessionId: this.sessionId, viewerLink };
@@ -158,7 +260,7 @@ class SOSService {
     if (!this.isActive) return null;
     this.isActive = false;
 
-    // stop recording if running
+    // Stop recording
     try {
       if (this.recordingInstance) {
         try {
@@ -170,7 +272,7 @@ class SOSService {
       console.warn('Error stopping recordingInstance', err);
     }
 
-    // wait for upload queue to drain a bit (best-effort)
+    // Wait for uploads to drain
     let tries = 0;
     while (this.uploadQueue.length > 0 && tries < 30) {
       await this._sleep(1000);
@@ -180,16 +282,15 @@ class SOSService {
     // Stop location updates
     this._stopLocationUpdates();
 
-    // Mark Firestore session as completed
+    // Mark session as completed
     try {
       await firestore().collection('sos-sessions').doc(this.sessionId).update({
         status: 'completed',
         endTime: firestore.FieldValue.serverTimestamp(),
       });
 
-      // Optionally call Cloud Function to assemble archive (if you have one)
-      // functions().httpsCallable('assembleSOSArchive')({ sessionId: this.sessionId })
-      //   .catch(e => console.warn('assemble archive error', e));
+      // 📁 COPY CHUNKS TO EVIDENCE LOCKER
+      await this._copyChunksToEvidenceLocker();
     } catch (err) {
       console.warn('Error updating session completed status', err);
     }
@@ -200,21 +301,78 @@ class SOSService {
     return finishedId;
   }
 
-  // -------------------------
-  // Recording + chunking
-  // -------------------------
-  async _startAudioChunkLoop() {
-    // loop that records short chunks until this.isActive is false
-    this.recordingMode = 'audio';
+  /**
+   * Copy all SOS chunks to Evidence Locker's Legal folder
+   */
+  async _copyChunksToEvidenceLocker() {
+    if (!this.userId || !this.sessionId) return;
 
-    // Loop in background: start/stop Recording instances for each chunk
+    try {
+      console.log('📁 Copying SOS chunks to Evidence Locker...');
+
+      // Get all chunks from Firestore
+      const chunksSnapshot = await firestore()
+        .collection('sos-sessions')
+        .doc(this.sessionId)
+        .collection('chunks')
+        .orderBy('index')
+        .get();
+
+      if (chunksSnapshot.empty) {
+        console.log('No chunks to copy');
+        return;
+      }
+
+      // Get user's evidence files
+      const userDoc = await firestore().collection('users').doc(this.userId).get();
+      const userData = userDoc.data() || {};
+      const evidenceFiles = userData.evidenceFiles || [];
+
+      // Create Legal folder if it doesn't exist
+      let legalFolderId = 'legal_folder';
+
+      // Add each chunk as an evidence file
+      const timestamp = new Date().toISOString();
+      const newFiles = [];
+
+      chunksSnapshot.forEach((chunkDoc) => {
+        const chunk = chunkDoc.data();
+        newFiles.push({
+          id: `sos_${this.sessionId}_${chunk.index}`,
+          type: 'audio',
+          uri: chunk.url,
+          name: `SOS_${this.sessionId}_Chunk_${chunk.index + 1}.m4a`,
+          notes: `Emergency recording from ${timestamp}`,
+          folderId: legalFolderId,
+          isReadOnly: true,
+          metadata: {
+            uploadedAt: timestamp,
+            size: 0,
+            sessionId: this.sessionId,
+          }
+        });
+      });
+
+      // Update user's evidence files
+      await firestore().collection('users').doc(this.userId).update({
+        evidenceFiles: [...newFiles, ...evidenceFiles]
+      });
+
+      console.log(`✅ ${newFiles.length} chunks copied to Evidence Locker`);
+    } catch (error) {
+      console.error('Error copying chunks to Evidence Locker:', error);
+    }
+  }
+
+  async _startAudioChunkLoop() {
+    this.recordingMode = 'audio';
     this._audioLoopRunning = true;
+
     (async () => {
       while (this.isActive) {
         try {
           const chunkUri = await this._recordOneChunk();
           if (chunkUri && this.sessionId) {
-            // queue it
             this._queueUpload({
               sessionId: this.sessionId,
               chunkIndex: this.chunkIndex,
@@ -222,12 +380,10 @@ class SOSService {
               mode: 'audio',
             });
             this.chunkIndex++;
-            // fire off uploads if online
             if (this.isOnline) this._processUploadQueue().catch(e => console.error(e));
           }
         } catch (err) {
           console.error('Chunk record error', err);
-          // short backoff to avoid tight loop on error
           await this._sleep(500);
         }
       }
@@ -236,7 +392,6 @@ class SOSService {
   }
 
   async _recordOneChunk() {
-    // prepare a file path
     const fileName = `sos_${Date.now()}_${Math.floor(Math.random()*1000)}.m4a`;
     const localUri = `${FileSystem.documentDirectory}${fileName}`;
 
@@ -245,7 +400,7 @@ class SOSService {
       await Audio.setAudioModeAsync({
         allowsRecordingIOS: true,
         playsInSilentModeIOS: true,
-        staysActiveInBackground: true, // attempt to keep recording in background
+        staysActiveInBackground: true,
       });
 
       await recording.prepareToRecordAsync({
@@ -267,21 +422,15 @@ class SOSService {
       });
 
       await recording.startAsync();
-      // record for CHUNK_DURATION
       await this._sleep(CHUNK_DURATION);
       await recording.stopAndUnloadAsync();
 
-      // get URI from recording
       const uri = recording.getURI();
-      // optionally copy to our FileSystem path (some platforms already put it in doc dir)
-      // We'll attempt to move/copy file if recording URI exists and is not within documentDirectory
       if (uri && !uri.startsWith(FileSystem.documentDirectory)) {
-        // copy
         try {
           await FileSystem.copyAsync({ from: uri, to: localUri });
           return localUri;
         } catch (e) {
-          // fallback to using returned uri
           return uri;
         }
       }
@@ -295,11 +444,7 @@ class SOSService {
     }
   }
 
-  // -------------------------
-  // Upload queue
-  // -------------------------
   _queueUpload(item) {
-    // item: { sessionId, chunkIndex, localUri, mode }
     this.uploadQueue.push({ ...item, attempts: 0 });
   }
 
@@ -308,12 +453,11 @@ class SOSService {
     this.processingUploads = true;
 
     while (this.uploadQueue.length > 0) {
-      if (!this.isOnline) break; // wait until online
+      if (!this.isOnline) break;
 
       const next = this.uploadQueue[0];
       try {
         await this._uploadChunk(next);
-        // remove from queue
         this.uploadQueue.shift();
       } catch (err) {
         next.attempts = (next.attempts || 0) + 1;
@@ -322,7 +466,6 @@ class SOSService {
           console.error(`Dropping chunk ${next.chunkIndex} after ${next.attempts} attempts`);
           this.uploadQueue.shift();
         } else {
-          // backoff then retry loop will pick it up
           await this._sleep(1000 * next.attempts);
         }
       }
@@ -332,16 +475,13 @@ class SOSService {
   }
 
   async _uploadChunk({ sessionId, chunkIndex, localUri, mode }) {
-    // path in storage
     const filename = `chunk_${String(chunkIndex).padStart(5, '0')}.m4a`;
     const storagePath = `sos-sessions/${sessionId}/${filename}`;
     const storageRef = storage().ref(storagePath);
 
-    // upload local file to Firebase Storage
     await storageRef.putFile(localUri);
     const downloadUrl = await storageRef.getDownloadURL();
 
-    // write metadata in Firestore under session/chunks
     await firestore()
       .collection('sos-sessions')
       .doc(sessionId)
@@ -350,21 +490,21 @@ class SOSService {
       .set({
         index: chunkIndex,
         url: downloadUrl,
+        storagePath,
         mode,
         uploadedAt: firestore.FieldValue.serverTimestamp(),
       });
 
-    // increment chunkCount atomically
     await firestore().collection('sos-sessions').doc(sessionId).update({
       chunkCount: firestore.FieldValue.increment(1),
       lastChunkAt: firestore.FieldValue.serverTimestamp(),
     });
 
-    // delete local file (best-effort)
-    try { await FileSystem.deleteAsync(localUri, { idempotent: true }); } catch (_) {}
+    try {
+      await FileSystem.deleteAsync(localUri, { idempotent: true });
+    } catch (_) {}
   }
 
-  // Optionally allow other parts of app (e.g., camera component) to queue uploads
   async queueUpload({ sessionId, localUri, mode = 'video', chunkIndex = null }) {
     if (!sessionId) sessionId = this.sessionId || this._generateSessionId();
     if (chunkIndex === null) chunkIndex = this.chunkIndex++;
@@ -372,11 +512,7 @@ class SOSService {
     if (this.isOnline) this._processUploadQueue().catch(e => console.error(e));
   }
 
-  // -------------------------
-  // Location updates
-  // -------------------------
   _startLocationUpdates() {
-    // update every 30s while SOS active
     this._stopLocationUpdates();
     this.locationInterval = setInterval(async () => {
       if (!this.isActive || !this.sessionId) return;
@@ -418,9 +554,6 @@ class SOSService {
     }
   }
 
-  // -------------------------
-  // Cleanup
-  // -------------------------
   async cleanup() {
     this.isActive = false;
     this._stopLocationUpdates();
@@ -433,6 +566,5 @@ class SOSService {
     } catch (_) {}
   }
 }
-
 
 export default new SOSService();

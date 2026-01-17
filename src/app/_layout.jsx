@@ -23,12 +23,14 @@ const _layout = () => {
             headerLargeTitleShadowVisible: false,
             headerLargeTitle: true
           }}>
+            <Stack.Screen name="index" />
             <Stack.Screen name="initial" />
             <Stack.Screen name="(auth)/login" options={{headerShown: true, title: 'Log In'}} />
             <Stack.Screen name="(auth)/register" options={{headerShown: true, title: 'Register'}} />
             <Stack.Screen name="(settings)/settings" />
             <Stack.Screen name="(settings)/changesettings" />
             <Stack.Screen name="map" />
+            <Stack.Screen name="shadowsense" />
           </Stack>
         </SafeAreaProvider>
       </ShadowSenseProvider>

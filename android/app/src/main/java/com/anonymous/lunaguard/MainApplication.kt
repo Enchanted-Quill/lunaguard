@@ -1,3 +1,4 @@
+// android/app/src/main/java/com/anonymous/lunaguard/MainApplication.kt
 package com.anonymous.lunaguard
 
 import android.app.Application
@@ -19,20 +20,20 @@ import expo.modules.ReactNativeHostWrapper
 class MainApplication : Application(), ReactApplication {
 
   override val reactNativeHost: ReactNativeHost = ReactNativeHostWrapper(
-      this,
-      object : DefaultReactNativeHost(this) {
-        override fun getPackages(): List<ReactPackage> =
-            PackageList(this).packages.apply {
-              // Packages that cannot be autolinked yet can be added manually here, for example:
-              // add(MyReactNativePackage())
-            }
+    this,
+    object : DefaultReactNativeHost(this) {
+      override fun getPackages(): List<ReactPackage> =
+        PackageList(this).packages.apply {
+          // 🚨 ADD SMS MANAGER PACKAGE HERE
+          add(SmsManagerPackage())
+        }
 
-          override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
+      override fun getJSMainModuleName(): String = ".expo/.virtual-metro-entry"
 
-          override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
+      override fun getUseDeveloperSupport(): Boolean = BuildConfig.DEBUG
 
-          override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
-      }
+      override val isNewArchEnabled: Boolean = BuildConfig.IS_NEW_ARCHITECTURE_ENABLED
+    }
   )
 
   override val reactHost: ReactHost

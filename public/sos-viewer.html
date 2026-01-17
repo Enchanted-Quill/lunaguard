@@ -95,16 +95,11 @@
             border-radius: 12px;
             overflow: hidden;
             margin-bottom: 20px;
-            position: relative;
-            padding-bottom: 56.25%; /* 16:9 aspect ratio */
+            padding: 20px;
         }
 
         #audio-player {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            width: 90%;
+            width: 100%;
         }
 
         .controls {
@@ -171,6 +166,11 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
+            cursor: pointer;
+        }
+
+        .chunk-item:hover {
+            background: rgba(255, 255, 255, 0.1);
         }
 
         .chunk-item.playing {
@@ -215,6 +215,124 @@
             margin-bottom: 20px;
             text-align: center;
         }
+
+        .debug-info {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            font-size: 12px;
+            color: #ac78cf;
+        }
+
+        /* 🔴 KILL SWITCH STYLES */
+        .kill-switch {
+            position: fixed;
+            bottom: 10px;
+            right: 10px;
+            background: rgba(139, 0, 0, 0.3);
+            border: 2px solid rgba(255, 0, 0, 0.5);
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            transition: all 0.3s;
+            z-index: 9999;
+            opacity: 0.3;
+        }
+
+        .kill-switch:hover {
+            opacity: 1;
+            background: rgba(139, 0, 0, 0.7);
+            transform: scale(1.1);
+        }
+
+        .kill-switch.confirming {
+            background: rgba(255, 0, 0, 0.9);
+            animation: killPulse 0.5s infinite;
+        }
+
+        @keyframes killPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.15); }
+        }
+
+        .kill-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+
+        .kill-modal.active {
+            display: flex;
+        }
+
+        .kill-modal-content {
+            background: #2d0a4a;
+            border: 2px solid #eb697c;
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 400px;
+            text-align: center;
+        }
+
+        .kill-modal-title {
+            font-size: 24px;
+            font-weight: bold;
+            color: #eb697c;
+            margin-bottom: 15px;
+        }
+
+        .kill-modal-text {
+            color: #e0c8c4;
+            margin-bottom: 25px;
+            line-height: 1.6;
+        }
+
+        .kill-modal-buttons {
+            display: flex;
+            gap: 15px;
+        }
+
+        .kill-modal-button {
+            flex: 1;
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .kill-cancel {
+            background: #652a9c;
+            color: #e0c8c4;
+        }
+
+        .kill-cancel:hover {
+            background: #aa63d2;
+        }
+
+        .kill-confirm {
+            background: #eb697c;
+            color: #fff;
+        }
+
+        .kill-confirm:hover {
+            background: #ff3355;
+        }
     </style>
 </head>
 <body>
@@ -229,6 +347,7 @@
     <div id="loading" class="loading">
         <div class="spinner"></div>
         <p>Loading emergency stream...</p>
+        <p id="loading-status" style="font-size: 14px; margin-top: 10px;">Initializing...</p>
     </div>
 
     <div id="error" class="error" style="display: none;"></div>
@@ -267,14 +386,42 @@
         </div>
 
         <div id="map-container" style="display: none;">
-            <iframe id="location-map" class="location-map"></iframe>
+            <iframe id="location-map" class="location-map" frameborder="0"></iframe>
         </div>
 
         <div class="timeline">
             <div class="timeline-title">Recording Timeline</div>
             <div class="chunk-list" id="chunk-list">
-                <p style="color: #ac78cf; text-align: center;">No chunks yet...</p>
+                <p style="color: #ac78cf; text-align: center;">Waiting for chunks...</p>
             </div>
+        </div>
+
+        <div class="debug-info">
+            <strong>Debug Info:</strong>
+            <div id="debug-output"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 🔴 KILL SWITCH (DEV ONLY) -->
+<div class="kill-switch" id="kill-switch" title="Emergency Kill Switch (Dev Only)">
+    ⏹️
+</div>
+
+<!-- Kill Switch Confirmation Modal -->
+<div class="kill-modal" id="kill-modal">
+    <div class="kill-modal-content">
+        <div class="kill-modal-title">⚠️ Kill SOS Session?</div>
+        <div class="kill-modal-text">
+            This will immediately stop the SOS recording and mark the session as completed.
+            <br><br>
+            <strong>This is a development feature only!</strong>
+            <br><br>
+            Session ID: <code id="kill-session-id" style="color: #ac78cf;"></code>
+        </div>
+        <div class="kill-modal-buttons">
+            <button class="kill-modal-button kill-cancel" id="kill-cancel">Cancel</button>
+            <button class="kill-modal-button kill-confirm" id="kill-confirm">Stop SOS</button>
         </div>
     </div>
 </div>
@@ -284,6 +431,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 
 <script>
+    // Firebase config
     const firebaseConfig = {
         apiKey: "AIzaSyABfu_CZbRMAck-FdPUc-qzrhm2rKJcoB8",
         authDomain: "lunaguard-304d3.firebaseapp.com",
@@ -301,106 +449,157 @@
     let currentChunkIndex = 0;
     let unsubscribe = null;
 
+    // Debug logging
+    function debugLog(message) {
+        console.log(message);
+        const debugOutput = document.getElementById('debug-output');
+        if (debugOutput) {
+            debugOutput.innerHTML += `<div>${new Date().toLocaleTimeString()}: ${message}</div>`;
+        }
+    }
+
+    // Update loading status
+    function updateLoadingStatus(message) {
+        const statusEl = document.getElementById('loading-status');
+        if (statusEl) {
+            statusEl.textContent = message;
+        }
+        debugLog(message);
+    }
+
     // Get session ID from URL
     function getSessionIdFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const sessionParam = params.get('session');
+        if (sessionParam) return sessionParam;
+
         const pathParts = window.location.pathname.split('/');
         return pathParts[pathParts.length - 1];
     }
 
-    // Get token from URL
-    function getTokenFromUrl() {
-        const params = new URLSearchParams(window.location.search);
-        return params.get('token');
-    }
-
     // Initialize viewer
     async function init() {
-        sessionId = getSessionIdFromUrl();
-        const token = getTokenFromUrl();
-
-        if (!sessionId) {
-            showError('Invalid session URL');
-            return;
-        }
-
         try {
-            // Authenticate with token if provided
-            if (token) {
-                await firebase.auth().signInWithCustomToken(token);
+            updateLoadingStatus('Getting session ID...');
+            sessionId = getSessionIdFromUrl();
+
+            if (!sessionId || sessionId === 'sos-viewer.html' || sessionId === '') {
+                throw new Error('No session ID provided. URL should be: sos-viewer.html?session=YOUR_SESSION_ID');
             }
 
-            // Load session data
+            debugLog(`Session ID: ${sessionId}`);
+
+            // Update kill switch modal with session ID
+            document.getElementById('kill-session-id').textContent = sessionId;
+
+            updateLoadingStatus('Connecting to Firebase...');
+
+            await db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+                debugLog(`Persistence error (non-critical): ${err.code}`);
+            });
+
+            updateLoadingStatus('Loading session data...');
             await loadSession();
 
-            // Listen for new chunks
+            updateLoadingStatus('Subscribing to chunks...');
             subscribeToChunks();
 
             document.getElementById('loading').style.display = 'none';
             document.getElementById('content').style.display = 'block';
+
+            debugLog('✅ Viewer loaded successfully');
         } catch (error) {
             console.error('Initialization error:', error);
-            showError('Failed to load emergency stream: ' + error.message);
+            showError(`Error: ${error.message}`);
         }
     }
 
     // Load session metadata
     async function loadSession() {
-        const sessionDoc = await db.collection('sos-sessions').doc(sessionId).get();
+        try {
+            debugLog('Fetching session document...');
+            const sessionDoc = await db.collection('sos-sessions').doc(sessionId).get();
 
-        if (!sessionDoc.exists) {
-            throw new Error('Session not found');
-        }
+            if (!sessionDoc.exists) {
+                throw new Error(`Session "${sessionId}" not found. The SOS may not have started yet or the session ID is incorrect.`);
+            }
 
-        const sessionData = sessionDoc.data();
+            const sessionData = sessionDoc.data();
+            debugLog(`Session data loaded: ${JSON.stringify(sessionData)}`);
 
-        document.getElementById('username').textContent = sessionData.username || 'Unknown';
-        document.getElementById('status').textContent = sessionData.status === 'active' ? '🟢 Active' : '🔴 Ended';
+            document.getElementById('username').textContent = sessionData.username || 'Unknown';
+            document.getElementById('status').textContent = sessionData.status === 'active' ? '🟢 Active' : '🔴 Ended';
 
-        if (sessionData.startTime) {
-            const startTime = sessionData.startTime.toDate();
-            document.getElementById('start-time').textContent = startTime.toLocaleTimeString();
-        }
+            if (sessionData.startTime) {
+                try {
+                    const startTime = sessionData.startTime.toDate ? sessionData.startTime.toDate() : new Date(sessionData.startTime);
+                    document.getElementById('start-time').textContent = startTime.toLocaleString();
+                } catch (e) {
+                    debugLog(`Error parsing startTime: ${e.message}`);
+                    document.getElementById('start-time').textContent = 'Unknown';
+                }
+            }
 
-        // Show map if location available
-        if (sessionData.location) {
-            const { latitude, longitude } = sessionData.location;
-            const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
-            document.getElementById('location-map').src = mapUrl;
-            document.getElementById('map-container').style.display = 'block';
+            if (sessionData.initialLocation) {
+                const { latitude, longitude } = sessionData.initialLocation;
+                const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
+                document.getElementById('location-map').src = mapUrl;
+                document.getElementById('map-container').style.display = 'block';
+                debugLog(`Map loaded: ${latitude}, ${longitude}`);
+            } else if (sessionData.currentLocation) {
+                const { latitude, longitude } = sessionData.currentLocation;
+                const mapUrl = `https://maps.google.com/maps?q=${latitude},${longitude}&z=15&output=embed`;
+                document.getElementById('location-map').src = mapUrl;
+                document.getElementById('map-container').style.display = 'block';
+                debugLog(`Map loaded from currentLocation: ${latitude}, ${longitude}`);
+            }
+        } catch (error) {
+            debugLog(`Error loading session: ${error.message}`);
+            throw error;
         }
     }
 
     // Subscribe to chunk updates
     function subscribeToChunks() {
+        debugLog('Setting up chunks listener...');
+
         unsubscribe = db.collection('sos-sessions')
             .doc(sessionId)
             .collection('chunks')
             .orderBy('index')
-            .onSnapshot(snapshot => {
-                snapshot.docChanges().forEach(change => {
-                    if (change.type === 'added') {
-                        const chunkData = change.doc.data();
-                        chunks.push(chunkData);
-                        addChunkToTimeline(chunkData);
+            .onSnapshot(
+                snapshot => {
+                    debugLog(`Snapshot received: ${snapshot.size} chunks total`);
 
-                        // Auto-play latest chunk
-                        if (chunks.length === 1) {
-                            playChunk(chunkData);
+                    snapshot.docChanges().forEach(change => {
+                        if (change.type === 'added') {
+                            const chunkData = change.doc.data();
+                            debugLog(`New chunk added: index ${chunkData.index}, mode: ${chunkData.mode}`);
+                            chunks.push(chunkData);
+                            addChunkToTimeline(chunkData);
+
+                            if (chunks.length === 1) {
+                                playChunk(chunkData);
+                            }
                         }
-                    }
-                });
+                    });
 
-                document.getElementById('chunk-count').textContent = chunks.length;
-                updateLastUpdateTime();
-            });
+                    document.getElementById('chunk-count').textContent = chunks.length;
+                    updateLastUpdateTime();
+                },
+                error => {
+                    debugLog(`Snapshot error: ${error.code} - ${error.message}`);
+                    showError(`Failed to load chunks: ${error.message}`);
+                }
+            );
     }
 
     // Add chunk to timeline
     function addChunkToTimeline(chunk) {
         const chunkList = document.getElementById('chunk-list');
 
-        // Remove placeholder
-        if (chunkList.querySelector('p')) {
+        const placeholder = chunkList.querySelector('p');
+        if (placeholder) {
             chunkList.innerHTML = '';
         }
 
@@ -408,7 +607,15 @@
         chunkItem.className = 'chunk-item';
         chunkItem.id = `chunk-${chunk.index}`;
 
-        const timestamp = chunk.timestamp ? new Date(chunk.timestamp.toMillis()).toLocaleTimeString() : 'Unknown';
+        let timestamp = 'Unknown time';
+        if (chunk.uploadedAt) {
+            try {
+                const time = chunk.uploadedAt.toDate ? chunk.uploadedAt.toDate() : new Date(chunk.uploadedAt);
+                timestamp = time.toLocaleTimeString();
+            } catch (e) {
+                debugLog(`Error parsing chunk timestamp: ${e.message}`);
+            }
+        }
 
         chunkItem.innerHTML = `
             <span>Chunk ${chunk.index + 1} - ${timestamp}</span>
@@ -417,29 +624,32 @@
 
         chunkItem.onclick = () => playChunk(chunk);
         chunkList.appendChild(chunkItem);
-
-        // Scroll to bottom
         chunkList.scrollTop = chunkList.scrollHeight;
     }
 
     // Play specific chunk
     function playChunk(chunk) {
+        debugLog(`Playing chunk ${chunk.index}: ${chunk.url}`);
         const player = document.getElementById('audio-player');
         player.src = chunk.url;
-        player.play();
+        player.play().catch(err => {
+            debugLog(`Playback error: ${err.message}`);
+        });
 
-        // Highlight playing chunk
         document.querySelectorAll('.chunk-item').forEach(item => {
             item.classList.remove('playing');
         });
-        document.getElementById(`chunk-${chunk.index}`)?.classList.add('playing');
+        const chunkEl = document.getElementById(`chunk-${chunk.index}`);
+        if (chunkEl) {
+            chunkEl.classList.add('playing');
+        }
 
         currentChunkIndex = chunk.index;
 
-        // Auto-play next chunk when current ends
         player.onended = () => {
             const nextChunk = chunks.find(c => c.index === currentChunkIndex + 1);
             if (nextChunk) {
+                debugLog(`Auto-playing next chunk: ${nextChunk.index}`);
                 playChunk(nextChunk);
             }
         };
@@ -454,8 +664,74 @@
     function showError(message) {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('error').style.display = 'block';
-        document.getElementById('error').textContent = message;
+        document.getElementById('error').innerHTML = `
+            <strong>Error:</strong><br>
+            ${message}<br><br>
+            <strong>Troubleshooting:</strong><br>
+            1. Make sure the URL includes ?session=YOUR_SESSION_ID<br>
+            2. Check that the SOS has been started in the app<br>
+            3. Verify Firestore security rules allow reads<br>
+            4. Check browser console for detailed errors
+        `;
+        debugLog(`ERROR: ${message}`);
     }
+
+    // 🔴 KILL SWITCH FUNCTIONALITY
+    const killSwitch = document.getElementById('kill-switch');
+    const killModal = document.getElementById('kill-modal');
+    const killCancel = document.getElementById('kill-cancel');
+    const killConfirm = document.getElementById('kill-confirm');
+
+    killSwitch.addEventListener('click', () => {
+        killModal.classList.add('active');
+        killSwitch.classList.add('confirming');
+    });
+
+    killCancel.addEventListener('click', () => {
+        killModal.classList.remove('active');
+        killSwitch.classList.remove('confirming');
+    });
+
+    killConfirm.addEventListener('click', async () => {
+        try {
+            debugLog('🔴 KILL SWITCH ACTIVATED - Stopping SOS session...');
+
+            killConfirm.textContent = 'Stopping...';
+            killConfirm.disabled = true;
+
+            // Update Firestore session to completed
+            await db.collection('sos-sessions').doc(sessionId).update({
+                status: 'completed',
+                endTime: firebase.firestore.FieldValue.serverTimestamp(),
+                stoppedBy: 'kill_switch_web_viewer',
+            });
+
+            debugLog('✅ SOS session stopped successfully');
+
+            // Update UI
+            document.getElementById('status').textContent = '🔴 Stopped (Kill Switch)';
+
+            killModal.classList.remove('active');
+            killSwitch.style.display = 'none';
+
+            alert('✅ SOS session stopped successfully!\n\nThe recording has been terminated and marked as completed in Firestore.');
+
+        } catch (error) {
+            console.error('Kill switch error:', error);
+            debugLog(`❌ Kill switch error: ${error.message}`);
+            alert(`Error stopping SOS: ${error.message}`);
+            killConfirm.textContent = 'Stop SOS';
+            killConfirm.disabled = false;
+        }
+    });
+
+    // Close modal on outside click
+    killModal.addEventListener('click', (e) => {
+        if (e.target === killModal) {
+            killModal.classList.remove('active');
+            killSwitch.classList.remove('confirming');
+        }
+    });
 
     // Event listeners
     document.getElementById('refresh-btn').addEventListener('click', () => {
@@ -463,7 +739,9 @@
     });
 
     document.getElementById('call-911').addEventListener('click', () => {
-        window.location.href = 'tel:911';
+        if (confirm('This will dial emergency services (911). Continue?')) {
+            window.location.href = 'tel:911';
+        }
     });
 
     // Cleanup on page unload
@@ -473,7 +751,7 @@
         }
     });
 
-    // Start
+    // Start initialization
     init();
 </script>
 </body>

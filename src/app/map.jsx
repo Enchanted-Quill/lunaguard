@@ -21,10 +21,11 @@ import * as Location from 'expo-location';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useUser } from '../context/UserContext';
 import { getDistance } from 'geolib';
+import { useRouter } from 'expo-router';
 import { useShadowSense } from '../context/ShadowSenseContext';
 
 export default function MapScreen() {
-  const { incidents, addIncident, dangerRadius, voteOnIncident, username, deleteIncident, updateIncident } = useUser();
+  const { incidents, addIncident, dangerRadius, voteOnIncident, username, userProfile, deleteIncident, updateIncident, emergencyContacts } = useUser();
   const mapRef = useRef(null);
 
   //Miscellaneous states
@@ -58,6 +59,8 @@ export default function MapScreen() {
   const [useSafeRoute, setUseSafeRoute] = useState(false);
   const [loadingSafeRoute, setLoadingSafeRoute] = useState(false);
 
+  const router = useRouter();
+
   // ShadowSense state
   const {
     isActive: shadowSenseActive,
@@ -67,7 +70,7 @@ export default function MapScreen() {
     deactivateShadowSense
   } = useShadowSense();
 
-  const [useShadowSense, setUseShadowSense] = useState(false);
+  const [enableShadowSense, setEnableShadowSense] = useState(false);
 
   // Google Maps API Key
   const GOOGLE_MAPS_API_KEY = 'AIzaSyD56nBfBcvXRIOA76Rv5q3Lp84_M1LCF7Y';
@@ -315,13 +318,13 @@ export default function MapScreen() {
     }
 
     // Activate ShadowSense if enabled
-    if (useShadowSense && !shadowSenseActive) {
-      const success = await activateShadowSense();
+    if (enableShadowSense && !shadowSenseActive) {
+      const success = await activateShadowSense(userProfile, emergencyContacts);
       if (success) {
         Alert.alert(
           'ShadowSense Activated',
           'Background monitoring is now active. You will be alerted if danger is detected.',
-          [{ text: 'OK' }]
+          [{ text: 'OK', onPress: () => router.push('/shadowsense') }] // Navigate to ShadowSense screen
         );
       } else {
         Alert.alert(
@@ -335,16 +338,26 @@ export default function MapScreen() {
     setShowDestinationSearch(false);
 
     if (useSafeRoute) {
-      // ... existing safe route code ...
+      const safeRoute = await findSafeRoute(
+        { latitude: location.coords.latitude, longitude: location.coords.longitude },
+        destinationCoords
+      );
+      if (safeRoute) {
+        openInGoogleMaps(destinationCoords);
+      }
     } else {
       openInGoogleMaps(destinationCoords);
     }
 
-    // Reset destination state but keep ShadowSense running
+    // Navigate to ShadowSense screen if it was activated
+    if (enableShadowSense && !shadowSenseActive) {
+      setTimeout(() => router.push('/shadowsense'), 1000);
+    }
+
     setDestinationCoords(null);
     setDestinationSearch('');
     setDestinationSuggestions([]);
-  }, [destinationCoords, useSafeRoute, useShadowSense, shadowSenseActive, location, findSafeRoute, activateShadowSense]);
+  }, [destinationCoords, useSafeRoute, enableShadowSense, shadowSenseActive, location, findSafeRoute, activateShadowSense, userProfile, emergencyContacts, router]);
 
   // Adds the incident to the map and resets when the submit button is pressed
   const handleReportIncident = useCallback(() => {
@@ -936,15 +949,15 @@ export default function MapScreen() {
                   <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 15 }}>
                     <Text style={{ color: '#fff', fontSize: 16, marginRight: 10 }}>ShadowSense</Text>
                     <Switch
-                      value={useShadowSense}
-                      onValueChange={setUseShadowSense}
-                      thumbColor={useShadowSense ? '#aa63d2' : '#ccc'}
+                      value={enableShadowSense}
+                      onValueChange={setEnableShadowSense}
+                      thumbColor={enableShadowSense ? '#aa63d2' : '#ccc'}
                       trackColor={{ false: '#444', true: '#652a9c' }}
                     />
                   </View>
 
                   {/* ShadowSense Info */}
-                  {useShadowSense && (
+                  {enableShadowSense && (
                     <View style={{ marginTop: 10, padding: 12, backgroundColor: 'rgba(170, 99, 210, 0.2)', borderRadius: 8 }}>
                       <Text style={{ color: '#e0c8c4', fontSize: 13, lineHeight: 18 }}>
                         ShadowSense will monitor sensors in the background to detect potential danger situations and automatically trigger SOS if needed.

@@ -57,6 +57,10 @@ export const UserProvider = ({ children }) => {
 
   const [dangerRadius, setDangerRadius] = useState(1);
 
+  // Evidence Locker state
+  const [evidenceFiles, setEvidenceFiles] = useState([]);
+  const [evidenceFolders, setEvidenceFolders] = useState([]);
+
   // Clean up old incidents
   useEffect(() => {
     const cleanupInterval = setInterval(() => {
@@ -77,23 +81,33 @@ export const UserProvider = ({ children }) => {
       const user = auth().currentUser;
       if (!user) return;
 
-      const userRef = firestore().collection('users').doc(user.uid);
-      const docSnap = await userRef.get();
+      try {
+        const userRef = firestore().collection('users').doc(user.uid);
+        const docSnap = await userRef.get();
 
-      if (docSnap.exists) {
-        const data = docSnap.data();
-        if (data.userProfile) setUserProfile(data.userProfile);
-        if (data.permissions) setPermissions(data.permissions);
-        if (data.shortcuts) setShortcuts(data.shortcuts);
-        if (data.emergencyContacts) setEmergencyContacts(data.emergencyContacts);
-      } else {
-        // Create default Firestore doc if it doesn't exist
-        await userRef.set({
-          userProfile,
-          permissions,
-          shortcuts,
-          emergencyContacts,
-        });
+        if (docSnap.exists) {
+          const data = docSnap.data();
+          if (data.userProfile) setUserProfile(data.userProfile);
+          if (data.permissions) setPermissions(data.permissions);
+          if (data.shortcuts) setShortcuts(data.shortcuts);
+          if (data.emergencyContacts) setEmergencyContacts(data.emergencyContacts);
+
+          // Load evidence locker data
+          if (data.evidenceFiles) setEvidenceFiles(data.evidenceFiles);
+          if (data.evidenceFolders) setEvidenceFolders(data.evidenceFolders);
+        } else {
+          // Create default Firestore doc if it doesn't exist
+          await userRef.set({
+            userProfile,
+            permissions,
+            shortcuts,
+            emergencyContacts,
+            evidenceFiles: [],
+            evidenceFolders: [],
+          });
+        }
+      } catch (error) {
+        console.error('Error loading user data:', error);
       }
     };
 
@@ -102,13 +116,18 @@ export const UserProvider = ({ children }) => {
 
   // --- Profile Functions ---
   const updateProfile = async updates => {
-    setUserProfile(prev => ({ ...prev, ...updates }));
+    const newProfile = { ...userProfile, ...updates };
+    setUserProfile(newProfile);
     const user = auth().currentUser;
     if (!user) return;
-    await firestore()
-      .collection('users')
-      .doc(user.uid)
-      .set({ userProfile: { ...userProfile, ...updates } }, { merge: true });
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({ userProfile: newProfile }, { merge: true });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+    }
   };
 
   const uploadProfilePic = async localUri => {
@@ -131,24 +150,34 @@ export const UserProvider = ({ children }) => {
 
   // --- Permissions Functions ---
   const updatePermissions = async updates => {
-    setPermissions(prev => ({ ...prev, ...updates }));
+    const newPermissions = { ...permissions, ...updates };
+    setPermissions(newPermissions);
     const user = auth().currentUser;
     if (!user) return;
-    await firestore()
-      .collection('users')
-      .doc(user.uid)
-      .set({ permissions: { ...permissions, ...updates } }, { merge: true });
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({ permissions: newPermissions }, { merge: true });
+    } catch (error) {
+      console.error('Error updating permissions:', error);
+    }
   };
 
   // --- Shortcuts Functions ---
   const updateShortcuts = async updates => {
-    setShortcuts(prev => ({ ...prev, ...updates }));
+    const newShortcuts = { ...shortcuts, ...updates };
+    setShortcuts(newShortcuts);
     const user = auth().currentUser;
     if (!user) return;
-    await firestore()
-      .collection('users')
-      .doc(user.uid)
-      .set({ shortcuts: { ...shortcuts, ...updates } }, { merge: true });
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({ shortcuts: newShortcuts }, { merge: true });
+    } catch (error) {
+      console.error('Error updating shortcuts:', error);
+    }
   };
 
   // --- Emergency Contacts Functions ---
@@ -156,13 +185,17 @@ export const UserProvider = ({ children }) => {
     setEmergencyContacts(contacts);
     const user = auth().currentUser;
     if (!user) return;
-    await firestore().collection('users').doc(user.uid).set(
-      { emergencyContacts: contacts },
-      { merge: true }
-    );
+    try {
+      await firestore().collection('users').doc(user.uid).set(
+        { emergencyContacts: contacts },
+        { merge: true }
+      );
+    } catch (error) {
+      console.error('Error updating emergency contacts:', error);
+    }
   };
 
-    // Function to add incident
+  // Function to add incident
   const addIncident = (incident) => {
     const { username } = userProfile;
     const newIncident = {
@@ -180,7 +213,6 @@ export const UserProvider = ({ children }) => {
   };
 
   // --- Incidents Functions ---
-
   const voteOnIncident = (incidentId, voteType, voterUsername) => {
     setIncidents(prev =>
       prev
@@ -223,6 +255,62 @@ export const UserProvider = ({ children }) => {
     );
   };
 
+  // Evidence Locker functions with Firebase persistence
+  const updateEvidenceFiles = async (newFiles) => {
+    setEvidenceFiles(newFiles);
+    const user = auth().currentUser;
+    if (!user) return;
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({ evidenceFiles: newFiles }, { merge: true });
+    } catch (error) {
+      console.error('Error updating evidence files:', error);
+    }
+  };
+
+  const updateEvidenceFolders = async (newFolders) => {
+    setEvidenceFolders(newFolders);
+    const user = auth().currentUser;
+    if (!user) return;
+    try {
+      await firestore()
+        .collection('users')
+        .doc(user.uid)
+        .set({ evidenceFolders: newFolders }, { merge: true });
+    } catch (error) {
+      console.error('Error updating evidence folders:', error);
+    }
+  };
+
+  const addEvidenceFile = async (file) => {
+    const newFiles = [file, ...evidenceFiles];
+    await updateEvidenceFiles(newFiles);
+  };
+
+  const addEvidenceFolder = async (folder) => {
+    const newFolders = [...evidenceFolders, folder];
+    await updateEvidenceFolders(newFolders);
+  };
+
+  const deleteEvidenceFile = async (fileId) => {
+    const newFiles = evidenceFiles.filter(file => file.id !== fileId);
+    await updateEvidenceFiles(newFiles);
+  };
+
+  const deleteEvidenceFolder = async (folderId) => {
+    // Move files in this folder to root
+    const updatedFiles = evidenceFiles.map(file =>
+      file.folderId === folderId ? { ...file, folderId: null } : file
+    );
+    await updateEvidenceFiles(updatedFiles);
+
+    // Delete the folder
+    const newFolders = evidenceFolders.filter(folder => folder.id !== folderId);
+    await updateEvidenceFolders(newFolders);
+  };
+
   const value = {
     userProfile,
     updateProfile,
@@ -233,6 +321,14 @@ export const UserProvider = ({ children }) => {
     updateShortcuts,
     emergencyContacts,
     updateEmergencyContacts,
+    evidenceFiles,
+    evidenceFolders,
+    updateEvidenceFiles,
+    updateEvidenceFolders,
+    addEvidenceFile,
+    addEvidenceFolder,
+    deleteEvidenceFile,
+    deleteEvidenceFolder,
     incidents,
     addIncident,
     updateIncidents,
@@ -241,6 +337,13 @@ export const UserProvider = ({ children }) => {
     updateIncident,
     dangerRadius,
     setDangerRadius,
+    // Legacy compatibility
+    contacts: emergencyContacts,
+    username: userProfile.username,
+    name: userProfile.name,
+    email: userProfile.email || '',
+    phone: userProfile.phone,
+    profilePic: userProfile.profilePic,
   };
 
   return <UserContext.Provider value={value}>{children}</UserContext.Provider>;

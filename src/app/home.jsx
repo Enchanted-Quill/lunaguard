@@ -12,16 +12,18 @@ import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useUser } from "../context/UserContext";
+import { useShadowSense } from "../context/ShadowSenseContext";
 import SOSService from "../utils/sosService";
 
-//Finds saved logo in assets
 const logo = require("../assets/logo.png");
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { username, contacts } = useUser();
+  const { userProfile, emergencyContacts } = useUser();
+  const { isActive: shadowSenseActive, activateShadowSense } = useShadowSense();
   const [sosActive, setSosActive] = useState(false);
   const [sosLoading, setSosLoading] = useState(false);
+  const [shadowSenseLoading, setShadowSenseLoading] = useState(false);
 
   const handleSOS = async () => {
     if (sosActive) {
@@ -68,7 +70,7 @@ export default function HomeScreen() {
                 setSosLoading(true);
 
                 // Check if contacts exist
-                if (!contacts || contacts.length === 0) {
+                if (!emergencyContacts || emergencyContacts.length === 0) {
                   Alert.alert(
                     'No Emergency Contacts',
                     'Please add emergency contacts in Settings before using SOS.'
@@ -78,7 +80,10 @@ export default function HomeScreen() {
                 }
 
                 // Start SOS
-                const result = await SOSService.startSOS(username, contacts);
+                const result = await SOSService.startSOS(
+                  userProfile.username || userProfile.name,
+                  emergencyContacts
+                );
 
                 setSosActive(true);
 
@@ -103,6 +108,66 @@ export default function HomeScreen() {
     }
   };
 
+  const handleStartShadowSense = async () => {
+    if (shadowSenseActive) {
+      // If already active, just navigate to the screen
+      router.push('/shadowsense');
+      return;
+    }
+
+    Alert.alert(
+      'Start ShadowSense',
+      'ShadowSense will monitor your environment and automatically trigger SOS if danger is detected. Continue?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Start',
+          onPress: async () => {
+            try {
+              setShadowSenseLoading(true);
+
+              // Check if contacts exist
+              if (!emergencyContacts || emergencyContacts.length === 0) {
+                Alert.alert(
+                  'No Emergency Contacts',
+                  'Please add emergency contacts in Settings before using ShadowSense.'
+                );
+                setShadowSenseLoading(false);
+                return;
+              }
+
+              // Start ShadowSense
+              const success = await activateShadowSense(userProfile, emergencyContacts);
+
+              if (success) {
+                Alert.alert(
+                  'ShadowSense Active',
+                  'Background monitoring started. You will be alerted if danger is detected.',
+                  [
+                    {
+                      text: 'OK',
+                      onPress: () => router.push('/shadowsense'),
+                    },
+                  ]
+                );
+              } else {
+                Alert.alert(
+                  'Error',
+                  'Failed to start ShadowSense. Please check your permissions in Settings.'
+                );
+              }
+            } catch (error) {
+              console.error('Error starting ShadowSense:', error);
+              Alert.alert('Error', `Failed to start ShadowSense: ${error.message}`);
+            } finally {
+              setShadowSenseLoading(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <View style={styles.container}>
       {/* Background gradient */}
@@ -113,7 +178,6 @@ export default function HomeScreen() {
 
       {/* Main content */}
       <SafeAreaView style={styles.inner}>
-
         {/* Logo */}
         <Image source={logo} style={styles.logo} resizeMode="contain" />
 
@@ -162,11 +226,30 @@ export default function HomeScreen() {
           <Text style={styles.buttonText}>Evidence Locker</Text>
         </TouchableOpacity>
 
+        {/* ShadowSense Button */}
+        <TouchableOpacity
+          style={[
+            styles.button,
+            shadowSenseActive && styles.shadowSenseActiveButton,
+          ]}
+          activeOpacity={0.5}
+          onPress={handleStartShadowSense}
+          disabled={shadowSenseLoading}
+        >
+          {shadowSenseLoading ? (
+            <ActivityIndicator color="#e0c8c4" size="small" />
+          ) : (
+            <Text style={styles.buttonText}>
+              {shadowSenseActive ? '👁️ ShadowSense (Active)' : 'ShadowSense'}
+            </Text>
+          )}
+        </TouchableOpacity>
+
         {/* SOS Button */}
         <TouchableOpacity
           style={[
             styles.emergencyButton,
-            sosActive && styles.emergencyButtonActive
+            sosActive && styles.emergencyButtonActive,
           ]}
           activeOpacity={0.5}
           onPress={handleSOS}
@@ -188,12 +271,18 @@ export default function HomeScreen() {
         {sosActive && (
           <View style={styles.sosIndicator}>
             <View style={styles.sosPulse} />
-            <Text style={styles.sosIndicatorText}>
-              🔴 Recording Active
-            </Text>
+            <Text style={styles.sosIndicatorText}>🔴 Recording Active</Text>
           </View>
         )}
 
+        {shadowSenseActive && !sosActive && (
+          <View style={styles.shadowSenseIndicator}>
+            <View style={styles.shadowSensePulse} />
+            <Text style={styles.shadowSenseIndicatorText}>
+              👁️ ShadowSense Monitoring
+            </Text>
+          </View>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -238,7 +327,10 @@ const styles = StyleSheet.create({
     width: 200,
     marginVertical: 8,
     alignSelf: "center",
-    alignItems: "center"
+    alignItems: "center",
+  },
+  shadowSenseActiveButton: {
+    backgroundColor: "#aa63d2",
   },
   buttonText: {
     color: "#e0c8c4",
@@ -254,34 +346,51 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  emergencyButtonActive: {
-    // Active state styling handled by gradient
-  },
+  emergencyButtonActive: {},
   gradientBackground: {
-    position: 'absolute',
+    position: "absolute",
     left: 0,
     right: 0,
     top: 0,
     bottom: 0,
-    borderRadius: 25
+    borderRadius: 25,
   },
   sosIndicator: {
     marginTop: 20,
-    alignItems: 'center',
-    position: 'relative',
+    alignItems: "center",
+    position: "relative",
   },
   sosPulse: {
-    position: 'absolute',
+    position: "absolute",
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#ff0000',
+    backgroundColor: "#ff0000",
     top: 5,
     left: -20,
   },
   sosIndicatorText: {
-    color: '#ff6b6b',
+    color: "#ff6b6b",
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: "600",
   },
-});
+  shadowSenseIndicator: {
+    marginTop: 10,
+    alignItems: "center",
+    position: "relative",
+  },
+  shadowSensePulse: {
+    position: "absolute",
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    backgroundColor: "#aa63d2",
+    top: 5,
+    left: -20,
+  },
+  shadowSenseIndicatorText: {
+    color: "#aa63d2",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+})

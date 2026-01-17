@@ -9,6 +9,7 @@ import {
   Pedometer,
   DeviceMotion
 } from 'expo-sensors';
+import SOSService from './sosService';
 
 const SHADOWSENSE_TASK = 'SHADOWSENSE_BACKGROUND_TASK';
 const RISK_CHECK_INTERVAL = 3000; // Check every 3 seconds
@@ -38,40 +39,21 @@ let sensorData = {
 
 // Risk calculation weights
 const WEIGHTS = {
-  SUDDEN_MOVEMENT: 15,      // Sudden jerky movements (dropped phone, struggle)
-  PROLONGED_STILL: 10,      // No movement for extended period
-  LOW_LIGHT: 8,             // Extremely low light conditions
-  ERRATIC_MOTION: 12,       // Random, non-walking motion patterns
-  RAPID_DIRECTION_CHANGE: 10, // Quick changes in direction
-  NO_STEPS: 5,              // No walking detected when should be moving
+  SUDDEN_MOVEMENT: 15,
+  PROLONGED_STILL: 10,
+  LOW_LIGHT: 8,
+  ERRATIC_MOTION: 12,
+  RAPID_DIRECTION_CHANGE: 10,
+  NO_STEPS: 5,
 };
+
+// TRACK SOS STATE
+let sosTriggered = false;
+let username = 'Unknown User';
+let emergencyContacts = [];
 
 /**
  * Calculate risk score based on sensor data
- *
- * Risk Factors Explained:
- * 1. Sudden Movement (0-25 points): Detects phone being dropped, thrown, or struggle
- *    - Triggered by rapid acceleration spikes (>15 m/s²)
- *
- * 2. Prolonged Stillness (0-20 points): Phone hasn't moved in a while
- *    - Could indicate user is incapacitated or restrained
- *    - Increases over time if no movement detected
- *
- * 3. Low Light Environment (0-15 points): Extremely dark surroundings
- *    - May indicate secluded area or trunk of car
- *    - Only scores high if prolonged (>30 seconds)
- *
- * 4. Erratic Motion (0-20 points): Non-walking movement patterns
- *    - Detects random, unnatural movements
- *    - Could indicate struggle or being carried
- *
- * 5. Rapid Direction Changes (0-15 points): Quick rotation/turning
- *    - Multiple direction changes in short time
- *    - May indicate disorientation or evasive action
- *
- * 6. No Steps Detected (0-10 points): Should be walking but isn't
- *    - User was walking, then suddenly stopped moving but phone still moves
- *    - Could indicate being carried or in vehicle unexpectedly
  */
 function calculateRiskScore() {
   let score = 0;
@@ -85,28 +67,27 @@ function calculateRiskScore() {
     Math.pow(sensorData.accelerometer.z, 2)
   );
 
-  if (totalAcceleration > 15) { // Gravity is ~9.8, so >15 is significant
+  if (totalAcceleration > 15) {
     sensorData.suddenMovements++;
     score += WEIGHTS.SUDDEN_MOVEMENT * Math.min(sensorData.suddenMovements / 3, 1);
   } else if (totalAcceleration < 2) {
-    // Reset sudden movement counter if stable
     sensorData.suddenMovements = Math.max(0, sensorData.suddenMovements - 0.1);
   }
 
   // 2. Prolonged Stillness
   if (totalAcceleration < 1.5 && !sensorData.isMoving) {
     sensorData.prolongedStill += timeSinceLastUpdate;
-    const stillnessScore = Math.min((sensorData.prolongedStill / 60), 2); // Max at 2 minutes
+    const stillnessScore = Math.min((sensorData.prolongedStill / 60), 2);
     score += WEIGHTS.PROLONGED_STILL * stillnessScore;
   } else {
     sensorData.prolongedStill = 0;
   }
 
   // 3. Low Light Environment
-  if (sensorData.light < 10) { // Very dark (lux < 10)
+  if (sensorData.light < 10) {
     sensorData.lowLightDuration += timeSinceLastUpdate;
-    if (sensorData.lowLightDuration > 30) { // More than 30 seconds
-      const lightScore = Math.min((sensorData.lowLightDuration / 120), 2); // Max at 2 minutes
+    if (sensorData.lowLightDuration > 30) {
+      const lightScore = Math.min((sensorData.lowLightDuration / 120), 2);
       score += WEIGHTS.LOW_LIGHT * lightScore;
     }
   } else {
@@ -121,23 +102,20 @@ function calculateRiskScore() {
   );
 
   if (gyroMagnitude > 3 && totalAcceleration > 5) {
-    // High rotation + high acceleration = erratic movement
     score += WEIGHTS.ERRATIC_MOTION * Math.min(gyroMagnitude / 5, 1);
   }
 
   // 5. Rapid Direction Changes
-  if (Math.abs(sensorData.gyroscope.z) > 2) { // Rapid yaw rotation
+  if (Math.abs(sensorData.gyroscope.z) > 2) {
     score += WEIGHTS.RAPID_DIRECTION_CHANGE * Math.min(Math.abs(sensorData.gyroscope.z) / 4, 1);
   }
 
-  // 6. No Steps Detected (when should be walking)
+  // 6. No Steps Detected
   const timeSinceLastStep = (now - sensorData.lastStepTime) / 1000;
   if (totalAcceleration > 2 && timeSinceLastStep > 30) {
-    // Phone is moving but no steps detected for 30+ seconds
     score += WEIGHTS.NO_STEPS;
   }
 
-  // Normalize score to 0-100 range
   return Math.min(Math.round(score), 100);
 }
 
@@ -156,38 +134,60 @@ function getRiskLevel(score) {
  * Trigger SOS when risk is critical
  */
 async function triggerSOS() {
+  if (sosTriggered) {
+    console.log('🚨 SOS already triggered, skipping duplicate');
+    return;
+  }
+
+  sosTriggered = true;
   console.log('🚨 CRITICAL RISK DETECTED - TRIGGERING SOS');
 
   // Send notification
   await Notifications.scheduleNotificationAsync({
     content: {
       title: '🚨 ShadowSense Alert',
-      body: 'Critical risk detected! Emergency contacts have been notified.',
+      body: 'Critical risk detected! Starting emergency recording...',
       sound: true,
       priority: Notifications.AndroidNotificationPriority.MAX,
     },
-    trigger: null, // Immediate
+    trigger: null,
   });
 
-  import SOSService from './sosService';
-  import { useUser } from '../context/UserContext';
+  try {
+    // START SOS SERVICE
+    const result = await SOSService.startSOS(username, emergencyContacts);
 
-  async function triggerSOS() {
-    console.log('🚨 CRITICAL RISK DETECTED - TRIGGERING SOS');
+    if (result.error) {
+      console.error('Failed to start SOS:', result.error);
+      sosTriggered = false;
+    } else {
+      console.log('✅ SOS started successfully:', result.sessionId);
 
-    // Send notification
-    await Notifications.scheduleNotificationAsync({...});
-
-    // Automatically start SOS
-    try {
-      // Get user data (you'll need to pass this in)
-      const username = 'user'; // Get from context
-      const contacts = []; // Get from context
-
-      await SOSService.startSOS(username, contacts);
-    } catch (error) {
-      console.error('Failed to auto-trigger SOS:', error);
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: '✅ Emergency Recording Active',
+          body: `Your emergency contacts have been notified. Session: ${result.sessionId}`,
+          sound: true,
+          data: {
+            sessionId: result.sessionId,
+            viewerLink: result.viewerLink
+          },
+        },
+        trigger: null,
+      });
     }
+  } catch (error) {
+    console.error('Error triggering SOS:', error);
+    sosTriggered = false;
+
+    await Notifications.scheduleNotificationAsync({
+      content: {
+        title: '⚠️ SOS Error',
+        body: 'Failed to start emergency recording. Please check permissions.',
+        sound: true,
+      },
+      trigger: null,
+    });
   }
 }
 
@@ -196,8 +196,15 @@ async function triggerSOS() {
  */
 let subscriptions = [];
 
-export async function startShadowSense() {
+export async function startShadowSense(userProfile = {}, contacts = []) {
   console.log('Starting ShadowSense monitoring...');
+
+  // Store user info for SOS
+  username = userProfile.username || userProfile.name || 'Unknown User';
+  emergencyContacts = contacts || [];
+
+  // Reset SOS trigger flag
+  sosTriggered = false;
 
   // Request permissions
   const { status: notifStatus } = await Notifications.requestPermissionsAsync();
@@ -230,43 +237,63 @@ export async function startShadowSense() {
   };
 
   // Start accelerometer
-  Accelerometer.setUpdateInterval(1000);
-  const accelSub = Accelerometer.addListener((data) => {
-    sensorData.accelerometer = data;
-    sensorData.lastUpdateTime = Date.now();
-  });
-  subscriptions.push(accelSub);
+  try {
+    Accelerometer.setUpdateInterval(1000);
+    const accelSub = Accelerometer.addListener((data) => {
+      sensorData.accelerometer = data;
+      sensorData.lastUpdateTime = Date.now();
+    });
+    subscriptions.push(accelSub);
+  } catch (e) {
+    console.warn('Accelerometer not available:', e);
+  }
 
   // Start gyroscope
-  Gyroscope.setUpdateInterval(1000);
-  const gyroSub = Gyroscope.addListener((data) => {
-    sensorData.gyroscope = data;
-  });
-  subscriptions.push(gyroSub);
+  try {
+    Gyroscope.setUpdateInterval(1000);
+    const gyroSub = Gyroscope.addListener((data) => {
+      sensorData.gyroscope = data;
+    });
+    subscriptions.push(gyroSub);
+  } catch (e) {
+    console.warn('Gyroscope not available:', e);
+  }
 
   // Start light sensor
-  LightSensor.setUpdateInterval(2000);
-  const lightSub = LightSensor.addListener((data) => {
-    sensorData.light = data.illuminance;
-  });
-  subscriptions.push(lightSub);
+  try {
+    LightSensor.setUpdateInterval(2000);
+    const lightSub = LightSensor.addListener((data) => {
+      sensorData.light = data.illuminance;
+    });
+    subscriptions.push(lightSub);
+  } catch (e) {
+    console.warn('Light sensor not available:', e);
+  }
 
   // Start pedometer
-  const pedometerSub = Pedometer.watchStepCount((result) => {
-    sensorData.stepCount = result.steps;
-    sensorData.lastStepTime = Date.now();
-    sensorData.isMoving = true;
-  });
-  subscriptions.push(pedometerSub);
+  try {
+    const pedometerSub = Pedometer.watchStepCount((result) => {
+      sensorData.stepCount = result.steps;
+      sensorData.lastStepTime = Date.now();
+      sensorData.isMoving = true;
+    });
+    subscriptions.push(pedometerSub);
+  } catch (e) {
+    console.warn('Pedometer not available:', e);
+  }
 
   // Start device motion
-  DeviceMotion.setUpdateInterval(1000);
-  const motionSub = DeviceMotion.addListener((data) => {
-    if (data.acceleration) {
-      sensorData.deviceMotion = data;
-    }
-  });
-  subscriptions.push(motionSub);
+  try {
+    DeviceMotion.setUpdateInterval(1000);
+    const motionSub = DeviceMotion.addListener((data) => {
+      if (data.acceleration) {
+        sensorData.deviceMotion = data;
+      }
+    });
+    subscriptions.push(motionSub);
+  } catch (e) {
+    console.warn('Device motion not available:', e);
+  }
 
   // Start risk monitoring interval
   const riskInterval = setInterval(async () => {
@@ -297,16 +324,29 @@ export async function startShadowSense() {
 }
 
 /**
- * Stop sensor subscriptions
+ * Stop sensor subscriptions and SOS if active
  */
-export function stopShadowSense() {
+export async function stopShadowSense() {
   console.log('Stopping ShadowSense monitoring...');
+
   subscriptions.forEach((sub) => {
     if (sub && sub.remove) {
       sub.remove();
     }
   });
   subscriptions = [];
+
+  // Stop SOS if it was triggered
+  if (sosTriggered) {
+    try {
+      await SOSService.stopSOS();
+      console.log('✅ SOS stopped');
+    } catch (error) {
+      console.error('Error stopping SOS:', error);
+    }
+  }
+
+  sosTriggered = false;
 }
 
 /**
@@ -317,16 +357,16 @@ export function getCurrentRiskScore() {
     score: calculateRiskScore(),
     level: getRiskLevel(calculateRiskScore()),
     sensorData: { ...sensorData },
+    sosActive: sosTriggered,
   };
 }
 
-// Background task definition (for when app is in background)
+// Background task definition (optional - requires background permissions)
 TaskManager.defineTask(SHADOWSENSE_TASK, async () => {
   try {
-    // This runs in background
     const riskScore = calculateRiskScore();
 
-    if (riskScore >= RISK_THRESHOLDS.CRITICAL) {
+    if (riskScore >= RISK_THRESHOLDS.CRITICAL && !sosTriggered) {
       await triggerSOS();
     }
 
@@ -340,35 +380,52 @@ TaskManager.defineTask(SHADOWSENSE_TASK, async () => {
 });
 
 /**
- * Register background location tracking (for when user is in Google Maps)
+ * Register background location tracking (OPTIONAL - only if you need it)
  */
 export async function startBackgroundTracking() {
-  const { status } = await Location.requestBackgroundPermissionsAsync();
-  if (status !== 'granted') {
-    console.warn('Background location permission not granted');
+  try {
+    // First check if we have foreground permission
+    const { status: foregroundStatus } = await Location.getForegroundPermissionsAsync();
+    if (foregroundStatus !== 'granted') {
+      console.warn('Foreground location permission not granted');
+      return false;
+    }
+
+    // Then request background permission
+    const { status } = await Location.requestBackgroundPermissionsAsync();
+    if (status !== 'granted') {
+      console.warn('Background location permission not granted - continuing without background tracking');
+      return false;
+    }
+
+    await Location.startLocationUpdatesAsync(SHADOWSENSE_TASK, {
+      accuracy: Location.Accuracy.Balanced,
+      timeInterval: 5000,
+      distanceInterval: 10,
+      foregroundService: {
+        notificationTitle: 'ShadowSense Active',
+        notificationBody: 'Monitoring your safety in the background',
+        notificationColor: '#652a9c',
+      },
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Failed to start background tracking:', error);
     return false;
   }
-
-  await Location.startLocationUpdatesAsync(SHADOWSENSE_TASK, {
-    accuracy: Location.Accuracy.Balanced,
-    timeInterval: 5000,
-    distanceInterval: 10,
-    foregroundService: {
-      notificationTitle: 'ShadowSense Active',
-      notificationBody: 'Monitoring your safety in the background',
-      notificationColor: '#652a9c',
-    },
-  });
-
-  return true;
 }
 
 /**
  * Stop background tracking
  */
 export async function stopBackgroundTracking() {
-  const isRegistered = await TaskManager.isTaskRegisteredAsync(SHADOWSENSE_TASK);
-  if (isRegistered) {
-    await Location.stopLocationUpdatesAsync(SHADOWSENSE_TASK);
+  try {
+    const isRegistered = await TaskManager.isTaskRegisteredAsync(SHADOWSENSE_TASK);
+    if (isRegistered) {
+      await Location.stopLocationUpdatesAsync(SHADOWSENSE_TASK);
+    }
+  } catch (error) {
+    console.error('Error stopping background tracking:', error);
   }
 }

@@ -10,6 +10,14 @@ import {
 
 const ShadowSenseContext = createContext();
 
+export const useShadowSense = () => {
+  const context = useContext(ShadowSenseContext);
+  if (!context) {
+    throw new Error('useShadowSense must be used within a ShadowSenseProvider');
+  }
+  return context;
+};
+
 export const ShadowSenseProvider = ({ children }) => {
   const [isActive, setIsActive] = useState(false);
   const [riskScore, setRiskScore] = useState(0);
@@ -69,10 +77,3 @@ export const ShadowSenseProvider = ({ children }) => {
   );
 };
 
-export const useShadowSense = () => {
-  const context = useContext(ShadowSenseContext);
-  if (!context) {
-    throw new Error('useShadowSense must be used within a ShadowSenseProvider');
-  }
-  return context;
-};

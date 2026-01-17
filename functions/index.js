@@ -101,3 +101,58 @@ exports.getSOSSession = functions.https.onCall(async (data, context) => {
     throw new functions.https.HttpsError('internal', error.message);
   }
 });
+
+/**
+ * Optional: Log when SOS sessions are created
+ */
+exports.onSOSSessionCreated = functions.firestore
+  .document('sos-sessions/{sessionId}')
+  .onCreate(async (snap, context) => {
+    const sessionId = context.params.sessionId;
+    const sessionData = snap.data();
+
+    console.log(`New SOS session created: ${sessionId}`);
+    console.log(`User: ${sessionData.username}`);
+    console.log(`Status: ${sessionData.status}`);
+
+    // You can add additional logic here, such as:
+    // - Sending push notifications to emergency contacts
+    // - Triggering additional alerts
+    // - Logging to external monitoring systems
+
+    return null;
+  });
+
+/**
+ * Optional: Archive old completed SOS sessions after 90 days
+ */
+exports.archiveOldSOSSessions = functions.pubsub
+  .schedule('every 24 hours')
+  .onRun(async (context) => {
+    const ninetyDaysAgo = new Date();
+    ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+    try {
+      const oldSessions = await admin.firestore()
+        .collection('sos-sessions')
+        .where('status', '==', 'completed')
+        .where('endTime', '<', ninetyDaysAgo)
+        .get();
+
+      console.log(`Found ${oldSessions.size} old sessions to archive`);
+
+      const archivePromises = oldSessions.docs.map(async (doc) => {
+        return doc.ref.update({
+          archived: true,
+          archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+      });
+
+      await Promise.all(archivePromises);
+      console.log('✅ Archive complete');
+    } catch (error) {
+      console.error('Archive error:', error);
+    }
+
+    return null;
+  });
